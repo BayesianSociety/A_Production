@@ -1,0 +1,280 @@
+Write a similar context for a full pacman game played on a local machine without a backend, written in html5 with javascript. 
+Very important, instead of ghosts, I want there to be capital letters which constitute some short words, like "DOG", "CAT", "SCHOOL". 
+The pacman must eat all the letters in the right order of the word in order to score a point. The letters don't chase the pacman, they just move randomly in a maze and they are always edible.
+The player must guess what the word is and eat the letters in the right order.
+Also, I want the maze and the look of the game to be very much like the one in the file attached.
+
+I attached the file from here:
+C:\Users\AndrzejukAdam\AI\Pacman\pacman_6
+
+
+# Exemplar Context for AI Build — Pac‑Man (Local HTML5/JavaScript, Word‑Letters Variant)
+
+This context is a complete, pinned spec for generating a single‑page, offline‑capable Pac‑Man‑style game rendered with HTML5 Canvas, with **letters** (not ghosts) that form short words. The player must **guess the hidden word** and eat the letters **in order** to score. No backend.
+
+---
+
+## 0) One‑Page Executive Summary
+
+* **Project name:** WordChomp
+* **Goal in one sentence:** Deliver a faithful Pac‑Man‑look browser game where moving letters form words (e.g., “DOG”, “CAT”, “SCHOOL”) and Pac‑Man must eat them in the correct order to score.
+* **Primary users:** Casual players, word‑puzzle fans; offline play supported.
+* **Non‑goals:** Multiplayer, servers/backends, user accounts, social features.
+* **Milestones:**
+
+  1. Core single‑player loop with one hidden word and scoring (M1)
+  2. Multiple rounds + dictionary, HUD with blanks and hint toggle (M2)
+  3. Polishing: sounds, CRT theme toggle, level progression, local highscores (M3)
+
+---
+
+## 1) Deliverables & Repository Layout
+
+* **Deliverables:** Single file build (no toolchain): `index.html` containing HTML/CSS/JS; optional `assets/` for sfx.
+* **Repo layout:**
+
+```
+/wordchomp
+  index.html         # Single-file playable build
+  /assets            # Optional: wav/ogg sfx
+  /docs              # README, design notes
+  /tests             # Optional: Playwright E2E
+```
+
+* **Runtime:** Any modern desktop browser; offline (no network).
+* **Device targets:** Desktop keyboard first; basic touch swipe optional.
+
+---
+
+## 2) Tech Stack & Versions (Pin Precisely)
+
+* **Language:** ECMAScript 2021 (ES12) in strict mode
+* **Graphics:** HTML5 Canvas 2D at 60 FPS
+* **Dependencies:** None (zero external libs)
+* **Audio:** Web Audio API (optional, guarded by feature flag)
+
+> Must run as a standalone file opened from disk (no server required).
+
+---
+
+## 3) Architecture Overview
+
+* **Style:** Single‑page app; deterministic tick (simulation) + render loop.
+* **Loop:** `requestAnimationFrame` → `update(dt)` → `draw()`; fixed‑step logic with accumulator (clamped to avoid spiral of death).
+* **State:** Single JS module namespace with entities: `Game`, `Maze`, `Player`, `Letter`, `RoundManager`, `HUD`.
+* **Persistence:** Local Storage for highscores and settings only.
+
+---
+
+## 4) Domain Model
+
+* **Entities:**
+
+  * `Player` — position (tile‑aligned), direction intent, speed, score, lives (configurable; default: 3).
+  * `Letter` — glyph (`'A'..'Z'`), word_id, order_index (0..n-1), position, velocity (tile cardinal), speed, RNG seed, state (`moving|collected`).
+  * `Round` — chosen word (string), letters[], progress_index (next required order), timer_ms, round_score.
+  * `Maze` — tile grid (walls/empty/pellet visuals only), wrap at tunnels, collision.
+  * `HUD` — score, lives, timer, blanks display (`_ _ _ _`), optional hint/preview.
+
+* **Sample record:**
+
+```json
+{
+  "round": {
+    "word": "DOG",
+    "progress_index": 1,
+    "letters": [
+      {"glyph":"D","order_index":0,"x":12.5,"y":11.5},
+      {"glyph":"O","order_index":1,"x":15.5,"y":11.5},
+      {"glyph":"G","order_index":2,"x":12.5,"y":12.5}
+    ]
+  }
+}
+```
+
+---
+
+## 5) Public Interfaces & Contracts
+
+### 5.1 Input Contracts
+
+* **Keyboard:** Arrow keys control movement; buffered direction changes at tile centers; `P` pause; `H` toggle hint (if enabled).
+* **Touch (optional):** Swipe cardinal directions; 80px min distance.
+
+### 5.2 Config Object (embedded in JS)
+
+```js
+const CONFIG = {
+  words: ["DOG","CAT","SCHOOL","CAR","TREE","HOUSE"],
+  roundTimeMs: 90000,
+  letterSpeedTilesPerSec: 6,
+  playerSpeedTilesPerSec: 9,
+  lives: 3,
+  penalties: { wrongLetter: 50 },
+  rewards: { perCorrectLetter: 100, wordBonus: 500 },
+  showHint: false,               // if true, HUD shows next required letter
+  showWord: false,               // if true, shows the actual word; default false (must guess)
+  audio: { enabled: false },
+};
+```
+
+* All values must be read at init; `showHint` and `audio.enabled` may be toggled in runtime.
+
+### 5.3 Map & Grid Contract
+
+* **Grid:** 28×31 tiles, tileSize = 16 px, canvas = 448×496 px.
+* **Tiles:** `1=wall`, `0=empty`, `2=dot` (visual only), optional `3=power` (visual only, no mechanics). Use the exact map array and visual style from the reference.
+* **Wrapping:** Horizontal tunnel wrap at the usual places; vertical wrap disallowed.
+
+---
+
+## 6) Game Rules (Authoritative Canon)
+
+* **Letters instead of ghosts:** No chasing; letters always edible; they roam randomly.
+* **Word logic:**
+
+  * At round start choose a word `W` from `CONFIG.words`.
+  * Spawn one `Letter` per character in `W`. Each letter carries its `order_index`.
+  * The **required next glyph** is `W[progress_index]`.
+  * On collision with Pac‑Man:
+
+    * If `glyph === W[progress_index]`: collect, increment `progress_index`, add `rewards.perCorrectLetter`.
+    * Else: apply `penalties.wrongLetter` (subtract from score, not below 0), **do not collect**, optional HUD flash.
+  * When all letters collected in order: add `rewards.wordBonus`, advance to next round (new word), refill pellets if used for visuals.
+* **Lives/Death:** Letters never kill the player. (Walls block, no other hazards.) Losing a life only occurs on **timer expiry** if lives>0; otherwise game over. (Assumption to keep challenge without enemies.)
+* **Timer:** Round countdown from `roundTimeMs`; at 0: lose 1 life, reset round (same word, letters re‑spawn); when lives reach 0 → game over dialog and score reset.
+* **Movement & Collisions:**
+
+  * Player and letters move only in cardinal directions along lanes; turns only on tile centers.
+  * Letter AI: at each tile center choose a random non‑reverse direction among passable neighbors; if none, reverse.
+  * Collision threshold: Euclidean distance < 0.5 tiles.
+* **Scoring:** Displayed in HUD; local highscore persisted in `localStorage`.
+
+---
+
+## 7) Visual Style & Rendering Contracts
+
+* **Canvas & CSS:** Fixed 448×496 canvas, `image-rendering: pixelated`, body flex‑centered, retro mono font, green HUD text, black background, blue walls, 2px border.
+* **Maze:** Draw solid blue wall tiles; white small dots for pellets; power dots may blink for style only.
+* **Pac‑Man:** Yellow circle sector with sinusoidal mouth animation; facing based on velocity.
+* **Letters:** Draw as capital glyphs centered on tile using Canvas2D text:
+
+  * Font: monospace (e.g., `16px "Courier New", monospace`), fillStyle = white with subtle dark stroke.
+  * Optional colored outline when it is the **next required** letter.
+* **HUD:** Top labels: `Score: N`, `Lives: L`, `Time: mm:ss`; blanks area shows `_ _ _ _` for the word; if `showHint=true`, also show `Next: <glyph>`.
+
+---
+
+## 8) Performance Targets
+
+* 60 FPS on modern desktop; dt clamped to 0.05s; GC pauses not noticeable.
+* Movement speeds from config; tile‑center stepping to prevent tunneling and preserve path choice.
+
+---
+
+## 9) Reliability & Debugging
+
+* **Pause/Step:** `P` toggles pause; when paused, `.` steps one tick.
+* **Debug overlay (flag):** shows positions, tile centers, RNG seeds.
+* **Replay (optional):** store last 10s inputs for bug repro (in memory only).
+
+---
+
+## 10) Build, Test, Release
+
+* **Build:** None; single file.
+* **Lint:** ESLint (recommended config embedded as comment or `/* eslint-env browser */`).
+* **Tests (optional):** Playwright script opens `index.html`, verifies keyboard control, letter order rules, timer/lives behavior.
+* **Release:** Ship `index.html`; verify it runs from `file://` URL.
+
+---
+
+## 11) Error‑Handling Matrix (sample)
+
+| Area    | Scenario                 | Handling                    |
+| ------- | ------------------------ | --------------------------- |
+| Input   | Unknown key              | Ignore                      |
+| Config  | Word list empty          | Fallback to `["DOG","CAT"]` |
+| Timer   | Negative dt spike        | Clamp to 0.05s              |
+| Storage | localStorage unavailable | Disable highscores silently |
+
+---
+
+## 12) Config & Feature Flags
+
+* `showHint` (bool)
+* `showWord` (bool)
+* `audio.enabled` (bool)
+* `theme = "retro" | "classic"` (optional CRT scanline overlay)
+
+---
+
+## 13) Dependencies Policy
+
+* **Allowed:** None by default.
+* **Banned:** External game frameworks; floating‑point‑heavy physics that break tile alignment.
+
+---
+
+## 14) Phased Generation Protocol (How We’ll Build)
+
+**Commands:**
+
+1. **BLUEPRINT** → file tree (single file), constants, types, main loop plan
+2. **STUBS** → compilable skeleton in `index.html` with sections: HTML, CSS, JS modules
+3. **IMPLEMENT maze** → map array, drawMaze(), collision helpers, wrap logic
+4. **IMPLEMENT player** → movement, input buffering, mouth anim
+5. **IMPLEMENT letters** → spawn words, letter AI, collisions, order rules
+6. **IMPLEMENT hud** → blanks, score, time, lives, hint toggle
+7. **INTEGRATION-PASS** → pause/step, round transitions, highscores
+8. **HARDEN** → dt clamp, edge cases, storage fallback, debug overlay
+9. **DOCS** → README with keybindings, config guide
+
+> Use these commands as top‑level prompts. Always output changed file paths + full contents.
+
+---
+
+## 15) Acceptance Criteria
+
+* Game runs from a double‑clicked `index.html` without any server.
+* Maze grid, colors, and HUD layout match the reference (retro look) closely.
+* Letters move randomly, never chase; always edible; eating wrong letter **does not** end the game but deducts points and keeps round running.
+* A word is counted **only** when letters are eaten in exact order; score increments accordingly; next word spawns.
+* Wrap tunnels function; turns only at tile centers; smooth Pac‑Man mouth animation visible.
+* 60 FPS on a typical laptop; no external dependencies.
+
+---
+
+## 16) Risks & Mitigations
+
+* **Readability of letters at 16px:** Add 1px stroke; optional outline for the “next” letter.
+* **Overlaps at tile centers:** Stagger starting positions; small collision radius; simple separation when two letters meet.
+* **Too easy without enemies:** Timer‑based pressure and per‑word bonus; larger words in later rounds.
+
+---
+
+## 17) Open Questions (Assumptions if unanswered)
+
+* Show hints by default? **Assume off** (must guess the word).
+* Lives count? **Assume 3**, lost on timer expiry only.
+* Sound effects? **Assume off** by default; flag‑controlled.
+
+---
+
+## 18) Change Log
+
+Record deviations as comments at the top of the JS section.
+
+---
+
+# Prompt Harness (Paste Before Generation)
+
+```
+You are my senior game developer. Follow the spec precisely. Never invent requirements beyond this context.
+When producing code:
+- Output the list of changed files first. Then, for each file, a single fenced code block with the entire contents.
+- Keep the game playable at every step; include comments explaining assumptions.
+- Use the grid/tile contracts and letter‑order rules exactly.
+- No external libraries. Must run via file:// in a modern browser.
+- If a detail is ambiguous, state your assumption at the top of the JS.
+```

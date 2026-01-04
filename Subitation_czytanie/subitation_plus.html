@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Subitation Plus</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --index-bg: #f4f6f8;
+      --index-tab: #cfe8ee;
+      --index-tab-border: #9bd0db;
+      --index-line: #80d1de;
+      --index-btn: #1dade0;
+      --index-btn-dark: #0b75a4;
+      --index-btn-shadow: #0a4e70;
+      --index-btn-text: #ffffff;
+      --math-bg: #f6f6f6;
+      --math-ink: #151414;
+      --math-btn: #d02660;
+      --math-btn-hover: #bb1f54;
+      --math-btn-pressed: #a61b4c;
+      --math-btn-text: #ffffff;
+      --math-shadow: rgba(0,0,0,.14);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; background: #fff; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Arial, sans-serif; }
+    body { color: #111; }
+
+    .screen {
+      display: none;
+      min-height: 100vh;
+      width: 100%;
+    }
+    .screen.active { display: flex; }
+
+    /* Language menu copied from subitation_1_10 */
+    #languageMenu {
+      position: fixed;
+      top: 0.75rem;
+      right: 0.75rem;
+      z-index: 12;
+      background: rgba(255,255,255,0.9);
+      border: 1px solid rgba(0,0,0,0.12);
+      padding: 0.6rem 0.8rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      min-width: 160px;
+    }
+    #languageMenu label {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #111;
+    }
+    #languageSelect {
+      min-width: 160px;
+      padding: 0.55rem 0.75rem;
+      font: 600 1rem/1.2 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      border-radius: 10px;
+      border: 1px solid rgba(0,0,0,0.16);
+      background: #fff;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+    }
+    #languageSelect:focus-visible {
+      outline: 3px solid rgba(208,38,96,0.45);
+      outline-offset: 2px;
+    }
+    .picker-title {
+      margin: 0;
+      font-size: clamp(1.5rem, 3vw, 2.25rem);
+      font-weight: 800;
+    }
+	.picker-card header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    /* Index screen styles */
+    #indexScreen {
+      background: var(--index-bg);
+      justify-content: center;
+      align-items: center;
+      padding: clamp(12px, 4vw, 32px);
+    }
+    #indexScreen .card { width:min(920px, 92vw); background:transparent; }
+    #indexScreen .tabs-wrap { position:relative; height:96px; display:flex; align-items:flex-end; justify-content:center; }
+    #indexScreen .tabs-line { position:absolute; left:6%; right:6%; height:8px; background:linear-gradient(90deg, transparent 0%, var(--index-line) 10%, var(--index-line) 90%, transparent 100%); border-radius:6px; top:56px; }
+    #indexScreen .tabs { position:relative; display:flex; gap:4px; z-index:2; }
+    #indexScreen .tab { user-select:none; cursor:pointer; padding:14px 22px; background:var(--index-tab); border:2px solid var(--index-tab-border); border-bottom:none; border-top-left-radius:18px; border-top-right-radius:18px; font-weight:600; box-shadow:0 2px 0 rgba(0,0,0,0.03) inset; transition:filter .15s ease, transform .15s ease; }
+    #indexScreen .tab:not(.active):hover{ filter:brightness(1.03); transform:translateY(-1px); }
+    #indexScreen .tab.active{ background:#e5f5f9; }
+    #indexScreen .grid{ margin:24px auto 8px; width:min(720px, 92vw); display:grid; grid-template-columns:repeat(2, 1fr); gap:48px 64px; justify-items:center; }
+    #indexScreen .btn-tile{ --shadow-offset: 10px; width: 270px; max-width: 86vw; height: 210px; border-radius: 28px; background: linear-gradient(160deg, var(--index-btn) 0%, #149fd0 60%, #1197c7 100%); color: var(--index-btn-text); display:grid; place-items:center; font-size: 64px; font-weight:800; letter-spacing: .5px; position:relative; cursor:pointer; border:none; outline:none; box-shadow: 0 var(--shadow-offset) 0 0 var(--index-btn-dark), 0 calc(var(--shadow-offset) + 10px) 24px rgba(0,0,0,.18); transition: transform .12s ease, box-shadow .12s ease, filter .12s ease; }
+    #indexScreen .btn-tile:focus-visible{ outline: 3px solid #fff; outline-offset: 2px; }
+    #indexScreen .btn-tile:hover{ filter: brightness(1.03); }
+    #indexScreen .btn-tile:active{ transform: translateY(6px); box-shadow: 0 4px 0 0 var(--index-btn-dark), 0 12px 18px rgba(0,0,0,.16); }
+    #indexScreen .frac{ display:inline-grid; grid-template-rows:auto 6px auto; align-items:center; row-gap:12px; }
+    #indexScreen .frac .bar{ height:6px; width:100%; background:var(--index-btn-text); border-radius: 3px; display:block; }
+    #indexScreen .selection{ text-align:center; font-weight:700; margin-top: 18px; color:#2a4a5e; min-height:1.4em; }
+    @media (max-width: 820px){
+      #indexScreen .btn-tile{ height: 160px; font-size: 48px; }
+      #indexScreen .grid{ gap:32px; }
+    }
+    @media (max-width: 520px){
+      #indexScreen .btn-tile{ width: 220px; height: 140px; font-size: 40px; }
+      #indexScreen .tabs-line{ left:3%; right:3%; }
+    }
+
+    /* Math picker styles */
+    #mathScreen {
+      background: var(--math-bg);
+      color: var(--math-ink);
+      justify-content: center;
+      align-items: flex-start;
+      padding: 38px 12px 48px;
+    }
+    #mathScreen .wrap{ width:min(1000px, 94vw); }
+    #mathScreen .grid{ display:grid; grid-template-columns: repeat(3, 1fr); gap:28px 36px; }
+    #mathScreen .op-btn{ height: 96px; border:none; border-radius: 12px; cursor:pointer; outline:none; background: var(--math-btn); color: var(--math-btn-text); font-weight: 900; font-size: 56px; letter-spacing:.5px; box-shadow: 0 8px 0 var(--math-btn-pressed), 0 16px 24px var(--math-shadow); transition: transform .1s ease, box-shadow .12s ease, background .12s ease, filter .12s ease; }
+    #mathScreen .op-btn:hover{ background: var(--math-btn-hover); filter: brightness(1.02); }
+    #mathScreen .op-btn:active{ transform: translateY(3px); box-shadow: 0 4px 0 var(--math-btn-pressed), 0 12px 18px var(--math-shadow); }
+    #mathScreen .op-btn:focus-visible{ outline: 3px solid #fff; outline-offset: 2px; }
+    #mathScreen .picked{ margin-top: 26px; text-align:center; font-weight:700; min-height:1.4em; }
+    @media (max-width: 820px){
+      #mathScreen .grid{ grid-template-columns: repeat(2, 1fr); }
+      #mathScreen .op-btn{ font-size:48px; height:84px; }
+    }
+    @media (max-width: 520px){
+      #mathScreen .grid{ grid-template-columns: 1fr; }
+      #mathScreen .op-btn{ font-size:42px; height:76px; }
+    }
+
+    /* Addition display */
+    #additionScreen {
+      background: #fff;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+    }
+    #expression {
+      font-size: clamp(3rem, 18vmin, 12rem);
+      font-weight: 800;
+      letter-spacing: 1px;
+      line-height: 1;
+      color: #111;
+    }
+</style>
+</head>
+<body>
+  <div id="languageMenu">
+    <label id="pickerHint" for="languageSelect">Select language</label>
+    <select id="languageSelect">
+      <option value="en-US">English</option>
+      <option value="nl-NL">Nederlands</option>
+    </select>
+  </div>
+  <section id="indexScreen" class="screen active" aria-label="Index picker">
+    <main class="card" role="main">
+      <div class="tabs-wrap" aria-label="Tabs">
+        <div class="tabs-line" aria-hidden="true"></div>
+        <div class="tabs">
+          <div class="tab active" role="button" tabindex="0" aria-pressed="true">Część 1</div>
+          <div class="tab" role="button" tabindex="0" aria-pressed="false">Część 2</div>
+        </div>
+      </div>
+
+      <section class="grid" aria-label="Choose value">
+        <button class="btn-tile" data-value="1" aria-label="Wybierz 1">1</button>
+        <button class="btn-tile" data-value="1/2" aria-label="Wybierz jedną drugą">
+          <span class="frac" aria-hidden="true">
+            <span class="top">1</span>
+            <span class="bar"></span>
+            <span class="bottom">2</span>
+          </span>
+        </button>
+        <button class="btn-tile" data-value="0,1" aria-label="Wybierz zero przecinek jeden">0,1</button>
+        <button class="btn-tile" data-value="-1" aria-label="Wybierz minus jeden">-1</button>
+      </section>
+
+      <div class="selection" id="selection" aria-live="polite"></div>
+    </main>
+  </section>
+
+  <section id="mathScreen" class="screen" aria-label="Math operator picker">
+    <main class="wrap" role="main">
+      <section class="grid" aria-label="Wybierz działanie">
+        <button class="op-btn" data-op="+" aria-label="Wybierz dodawanie">+</button>
+        <button class="op-btn" data-op="−" aria-label="Wybierz odejmowanie">−</button>
+        <button class="op-btn" data-op="×" aria-label="Wybierz mnożenie">×</button>
+        <button class="op-btn" data-op="÷" aria-label="Wybierz dzielenie">÷</button>
+        <button class="op-btn" data-op="Mix" aria-label="Wybierz losowo">Mix</button>
+      </section>
+      <div id="picked" class="picked" aria-live="polite"></div>
+    </main>
+  </section>
+
+  <section id="additionScreen" class="screen" aria-label="Addition display">
+    <div id="expression" aria-live="assertive">&nbsp;</div>
+  </section>
+
+  <script>
+    (function(){
+      const screens = {
+        index: document.getElementById('indexScreen'),
+        math: document.getElementById('mathScreen'),
+        addition: document.getElementById('additionScreen')
+      };
+      const expressionEl = document.getElementById('expression');
+      const selectionEl = document.getElementById('selection');
+      const pickedEl = document.getElementById('picked');
+      const languageSelect = document.getElementById('languageSelect');
+
+      let selectedTile = null;
+      let running = false;
+
+      const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+      const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+      const EN_ONES = ['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
+      const EN_TENS = ['', '', 'twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];
+      function wordsEnglish(n){
+        if (n < 20) return EN_ONES[n];
+        if (n < 100){
+          const tens = Math.floor(n / 10);
+          const unit = n % 10;
+          return unit ? `${EN_TENS[tens]}-${EN_ONES[unit]}` : EN_TENS[tens];
+        }
+        const hundred = Math.floor(n / 100);
+        const remainder = n % 100;
+        const prefix = `${EN_ONES[hundred]} hundred`;
+        return remainder ? `${prefix} ${wordsEnglish(remainder)}` : prefix;
+      }
+
+      const NL_ONES = ['nul','een','twee','drie','vier','vijf','zes','zeven','acht','negen','tien','elf','twaalf','dertien','veertien','vijftien','zestien','zeventien','achttien','negentien'];
+      const NL_TENS = ['', '', 'twintig','dertig','veertig','vijftig','zestig','zeventig','tachtig','negentig'];
+      function nlUnitWord(unit){
+        switch(unit){
+          case 1: return 'een';
+          case 2: return 'twee';
+          case 3: return 'drie';
+          case 4: return 'vier';
+          case 5: return 'vijf';
+          case 6: return 'zes';
+          case 7: return 'zeven';
+          case 8: return 'acht';
+          case 9: return 'negen';
+          default: return '';
+        }
+      }
+      function wordsDutch(n){
+        if (n < 20) return NL_ONES[n];
+        if (n < 100){
+          const tens = Math.floor(n / 10);
+          const unit = n % 10;
+          if (unit === 0) return NL_TENS[tens];
+          return `${nlUnitWord(unit)} en ${NL_TENS[tens]}`;
+        }
+        const hundred = Math.floor(n / 100);
+        const remainder = n % 100;
+        const prefix = hundred === 1 ? 'honderd' : `${NL_ONES[hundred]}honderd`;
+        if (!remainder) return prefix;
+        return `${prefix} ${wordsDutch(remainder)}`;
+      }
+
+      function numberToSpeechWords(n, lang){
+        if (lang && lang.toLowerCase().startsWith('nl')) return wordsDutch(n);
+        return wordsEnglish(n);
+      }
+
+      function showScreen(name){
+        Object.values(screens).forEach(el => el.classList.remove('active'));
+        if (screens[name]) screens[name].classList.add('active');
+      }
+
+      // Tabs mimic original interaction
+      screens.index.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          screens.index.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+        });
+        tab.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tab.click(); }
+        });
+      });
+
+      // Handle tile picks
+      screens.index.querySelectorAll('.btn-tile').forEach(btn => {
+        btn.addEventListener('click', () => handleTilePick(btn));
+        btn.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); btn.click(); }
+        });
+      });
+
+      function handleTilePick(btn){
+        const value = btn.dataset.value;
+        selectionEl.textContent = `Wybrano: ${value}`;
+        selectedTile = value;
+        showScreen('math');
+        pickedEl.textContent = 'Wybierz operator „+” aby kontynuować.';
+      }
+
+      // Math picker buttons
+      screens.math.querySelectorAll('.op-btn').forEach(btn => {
+        btn.addEventListener('click', () => handleOperator(btn));
+      });
+
+      function handleOperator(btn){
+        const op = btn.dataset.op;
+        pickedEl.textContent = `Wybrano: ${op}`;
+        if (selectedTile === '1' && op === '+'){
+          showScreen('addition');
+          runSequence();
+        }
+      }
+
+      // Speech setup (same pattern as subitation_1_10)
+      const speech = 'speechSynthesis' in window ? window.speechSynthesis : null;
+      const speechState = {
+        voices: [],
+        loaded: false,
+        preferredLang: ((navigator.language || '').toLowerCase().startsWith('nl')) ? 'nl-NL' : 'en-US'
+      };
+      const normalizeLang = (value) => {
+        return (value || '').toLowerCase().startsWith('nl') ? 'nl-NL' : 'en-US';
+      };
+      languageSelect.value = speechState.preferredLang;
+      speechState.preferredLang = normalizeLang(languageSelect.value);
+      languageSelect.addEventListener('change', () => {
+        speechState.preferredLang = normalizeLang(languageSelect.value);
+        if (speech) speech.cancel();
+      });
+
+      async function loadVoices(){
+        if (!speech) return [];
+        const existing = speech.getVoices();
+        if (existing.length) return existing;
+        return new Promise(resolve => {
+          const handle = () => {
+            speech.removeEventListener('voiceschanged', handle);
+            resolve(speech.getVoices());
+          };
+          speech.addEventListener('voiceschanged', handle, { once: true });
+          setTimeout(() => resolve(speech.getVoices()), 750);
+        });
+      }
+
+      async function ensureVoices(){
+        if (speechState.loaded) return speechState.voices;
+        speechState.voices = await loadVoices();
+        speechState.loaded = true;
+        return speechState.voices;
+      }
+
+      function pickVoice(lang){
+        if (!speechState.voices.length) return null;
+        const key = lang.split('-')[0];
+        return speechState.voices.find(v => v.lang === lang) ||
+               speechState.voices.find(v => v.lang && v.lang.toLowerCase().startsWith(key));
+      }
+
+      async function speakText(text, lang){
+        if (!speech || !text) return;
+        await ensureVoices();
+        speech.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = lang;
+        utterance.rate = 1.6;
+        const voice = pickVoice(lang);
+        if (voice) utterance.voice = voice;
+        speech.speak(utterance);
+      }
+
+      function currentLang(){
+        speechState.preferredLang = normalizeLang(languageSelect ? languageSelect.value : speechState.preferredLang);
+        return speechState.preferredLang;
+      }
+      function getDurations(lang){
+        if ((lang || '').startsWith('nl')) return { expression: 2900, result: 2200 };
+        return { expression: 1800, result: 1500 };
+      }
+
+      async function runSequence(){
+        if (running) return;
+        running = true;
+        await ensureVoices();
+        for (let round = 0; round < 3; round++){
+          const a = randInt(1, 150);
+          const b = randInt(1, 150);
+          const sum = a + b;
+          const lang = currentLang();
+          const { expression: exprDuration, result: resultDuration } = getDurations(lang);
+          const aWords = numberToSpeechWords(a, lang);
+          const bWords = numberToSpeechWords(b, lang);
+          const sumWords = numberToSpeechWords(sum, lang);
+
+          expressionEl.textContent = `${a} + ${b}`;
+          if (lang === 'nl-NL'){
+            speakText(`${aWords} plus ${bWords}`, 'nl-NL');
+          } else {
+            speakText(`${aWords} plus ${bWords}`, 'en-US');
+          }
+          await sleep(exprDuration);
+
+          expressionEl.textContent = `=${sum}`;
+          if (lang === 'nl-NL'){
+            speakText(`is gelijk aan ${sumWords}`, 'nl-NL');
+          } else {
+            speakText(`equals ${sumWords}`, 'en-US');
+          }
+          await sleep(resultDuration);
+        }
+        blankPage();
+      }
+
+      function blankPage(){
+        if (speech) speech.cancel();
+        document.body.innerHTML = '';
+        document.body.style.background = '#fff';
+      }
+    })();
+  </script>
+</body>
+</html>

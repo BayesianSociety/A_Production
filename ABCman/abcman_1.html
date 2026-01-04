@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>WordChomp — Pac-Man Letters (Local)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    /* Layout & retro look approximating the reference */
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #333;
+      color: #0f0;
+      font-family: "Courier New", Courier, monospace;
+      user-select: none;
+    }
+    #game { text-align: center; }
+    canvas {
+      width: 448px; height: 496px; /* 28x31 tiles @16px */
+      border: 2px solid #000;
+      background: #000;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      display: block;
+      margin: 8px auto;
+    }
+    #hud {
+      display: flex;
+      gap: 24px;
+      justify-content: center;
+      align-items: center;
+      font-size: 18px;
+      line-height: 1.2;
+    }
+    #wordBlanks { letter-spacing: 6px; }
+    #msg { margin-top: 6px; min-height: 20px; color: #9f9; }
+    .btn { color:#0f0; background:#111; border:1px solid #0f0; padding:4px 8px; cursor:pointer; }
+
+    /* HUD pills & warnings */
+    .pill { padding: 2px 8px; border:1px solid #0f0; border-radius: 10px; }
+    .badge { display:inline-block; min-width:20px; text-align:center; border:1px solid #0f0; border-radius: 4px; padding: 0 6px; }
+    #time.lowTime { color:#f66; border-color:#f66; }
+    #wordBlanks span { display:inline-block; min-width: 14px; }
+    #wordBlanks .done { color:#0f0; }
+    #wordBlanks .todo { color:#090; }
+    #next strong { font-size: 18px; }
+  </style>
+</head>
+<body>
+<div id="game">
+  <div id="hud">
+    <div id="score">Score: 0</div>
+    <div id="lives">Lives: 3</div>
+    <div id="time">Time: 00:00</div>
+    <div id="next" title="Next required letter">Next: <span class="badge">?</span></div>
+  </div>
+  <canvas id="c" width="448" height="496"></canvas>
+  <div id="wordBlanks">_ _ _</div>
+  <div id="msg">Arrow keys to move • P pause • H hint</div>
+  <div>
+    <button class="btn" id="toggleHint">Toggle Hint</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+/*
+ASSUMPTIONS (explicit):
+- EXACT 28x31 map provided below is authoritative. 1=wall, 0=empty, 2=pellet VISUAL lane.
+- Letters must spawn and move ONLY on pellet tiles (value 2). They are always edible and never harm the player.
+- Word letters must be eaten IN ORDER to score; wrong-order pickups deduct points but letters remain.
+- Pac-Man movement uses tile centers at (N + 0.5). We align perpendicular axis to lane centers to avoid drift.
+- Facing semantics: player.lastFacing = angle in radians where 0 = right, +π/2 = down, π = left, −π/2 = up.
+  Rendering draws a wedge inherently facing RIGHT; we rotate by lastFacing (no ad-hoc offsets).
+- Single-file, no external libraries, must run via file:// in a modern browser.
+*/
+
+const CONFIG = {
+  words: ["DOG","CAT","SCHOOL","CAR","TREE","HOUSE"],
+  roundTimeMs: 90_000,
+  letterSpeedTilesPerSec: 6,
+  playerSpeedTilesPerSec: 9,
+  lives: 3,
+  penalties: { wrongLetter: 50 },
+  rewards: { perCorrectLetter: 100, wordBonus: 500 },
+  showHint: false,
+  showWord: false,
+  audio: { enabled: false },
+  tileSize: 16,
+  cols: 28,
+  rows: 31,
+  colors: { wall:"#00f", dot:"#fff", pac:"#ff0", text:"#0f0", bg:"#000", stroke:"#111" },
+};
+
+/* -------- Map (EXACTLY as provided) -------- */
+const MAP = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,1,0,0,1,2,1,0,0,0,1,2,1,1,2,1,0,0,0,1,2,1,0,0,1,2,1],
+  [1,2,1,0,0,1,2,1,0,0,0,1,2,1,1,2,1,0,0,0,1,2,1,0,0,1,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],
+  [1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],
+  [0,0,0,0,0,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,1,1,1,0,0,1,1,1,0,1,1,2,1,0,0,0,0,0],
+  [1,1,1,1,1,1,2,1,1,0,1,0,0,0,0,0,0,1,0,1,1,2,1,1,1,1,1,1],
+  [0,0,0,0,0,0,2,0,0,0,1,0,0,0,0,0,0,1,0,0,0,2,0,0,0,0,0,0],
+  [1,1,1,1,1,1,2,1,1,0,1,0,0,0,0,0,0,1,0,1,1,2,1,1,1,1,1,1],
+  [0,0,0,0,0,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,0,0,0,0,0],
+  [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,2,2,1,1,2,2,2,2,2,2,2,0,0,2,2,2,2,2,2,2,1,1,2,2,2,1],
+  [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
+  [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
+  [1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+/* -------- Canvas & HUD -------- */
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const livesEl = document.getElementById('lives');
+const timeEl = document.getElementById('time');
+const blanksEl = document.getElementById('wordBlanks');
+const nextEl = document.getElementById('next');
+const msgEl = document.getElementById('msg');
+document.getElementById('toggleHint').onclick = () => {
+  CONFIG.showHint = !CONFIG.showHint;
+  updateHUD();
+};
+
+/* -------- Utilities -------- */
+const rnd = (() => { // simple LCG for deterministic letter AI per round
+  let s = 1234567;
+  return {
+    seed(v) { s = (v>>>0) || 1; },
+    next() { s = (1103515245 * s + 12345) >>> 0; return s; },
+    float() { return (rnd.next() % 10000) / 10000; },
+    pick(arr) { return arr[(rnd.next() % arr.length)]; }
+  };
+})();
+
+function clamp(v,lo,hi) { return Math.max(lo, Math.min(hi, v)); }
+function tileCenter(v) { return Math.abs((v - Math.floor(v)) - 0.5) < 0.05; }
+function dist2(ax,ay,bx,by) { const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy; }
+function fmtMMSS(totalSeconds){
+  totalSeconds = Math.max(0, Math.floor(totalSeconds));
+  const m = String(Math.floor(totalSeconds/60)).padStart(2,'0');
+  const s = String(totalSeconds%60).padStart(2,'0');
+  return `${m}:${s}`;
+}
+function renderBlanks(word, progress){
+  const out = [];
+  for(let i=0;i<word.length;i++){
+    const ch = i < progress ? word[i] : '_';
+    const cls = i < progress ? 'done' : 'todo';
+    out.push(`<span class="${cls}">${ch}</span>`);
+  }
+  return out.join(' ');
+}
+
+function isPassable(cx, cy) {
+  if (cx < 0 || cx >= CONFIG.cols || cy < 0 || cy >= CONFIG.rows) return false;
+  const t = MAP[cy][cx];
+  return t === 0 || t === 2;
+}
+function isPellet(cx, cy) {
+  if (cx < 0 || cx >= CONFIG.cols || cy < 0 || cy >= CONFIG.rows) return false;
+  return MAP[cy][cx] === 2;
+}
+function canGo(x,y,dx,dy) {
+  const cx = Math.floor(x);
+  const cy = Math.floor(y);
+  const nx = cx + dx;
+  const ny = cy + dy;
+  return isPassable(nx, ny);
+}
+function canGoPellet(x,y,dx,dy) {
+  const cx = Math.floor(x);
+  const cy = Math.floor(y);
+  return isPellet(cx + dx, cy + dy);
+}
+function nearestPelletCenter(x, y, maxR=12) {
+  // Return [px,py] = centers (tile+0.5) of a pellet tile nearest to (x,y)
+  const sx = Math.floor(x), sy = Math.floor(y);
+  if (isPellet(sx, sy)) return [sx+0.5, sy+0.5];
+  for (let r=1; r<=maxR; r++) {
+    for (let dx=-r; dx<=r; dx++) {
+      for (let dy=-r; dy<=r; dy++) {
+        const tx = sx+dx, ty = sy+dy;
+        if (isPellet(tx, ty)) return [tx+0.5, ty+0.5];
+      }
+    }
+  }
+  // Fallback: first pellet in map
+  for (let yy=0; yy<CONFIG.rows; yy++) for (let xx=0; xx<CONFIG.cols; xx++) {
+    if (isPellet(xx, yy)) return [xx+0.5, yy+0.5];
+  }
+  return [x, y]; // should never happen on this map
+}
+
+/* -------- Grid helpers -------- */
+function atCenter(x,y) { return tileCenter(x) && tileCenter(y); }
+function alignToGrid(entity) {
+  // Snap perpendicular axis to nearest lane center (tile + 0.5)
+  const eps = 0.15;
+  const centerY = Math.floor(entity.y) + 0.5;
+  const centerX = Math.floor(entity.x) + 0.5;
+  if (Math.abs(entity.dx) > 0 && Math.abs(entity.y - centerY) < eps) entity.y = centerY;
+  if (Math.abs(entity.dy) > 0 && Math.abs(entity.x - centerX) < eps) entity.x = centerX;
+}
+
+/* -------- Entities -------- */
+const gameState = {
+  running: true,
+  paused: false,
+  lives: CONFIG.lives,
+  score: 0,
+  roundWord: "DOG",
+  progressIndex: 0,
+  timeLeftMs: CONFIG.roundTimeMs,
+  letters: [],
+};
+
+const player = {
+  // Central-ish default; spawn search ensures passable start
+  spawnX: 14.5, spawnY: 23.5,
+  x: 14.5, y: 23.5, dx: 0, dy: 0, wantDx: 1, wantDy: 0,
+  speed: CONFIG.playerSpeedTilesPerSec, anim: 0, lastFacing: 0
+};
+
+function isTilePassableCenter(tx, ty) { return isPassable(Math.floor(tx), Math.floor(ty)); }
+
+function spawnPlayer() {
+  // Find nearest passable tile center to the configured spawn
+  let sx = player.spawnX, sy = player.spawnY;
+  if (!isTilePassableCenter(sx, sy)) {
+    let found = false;
+    for (let r=1; r<=6 && !found; r++) {
+      for (let dx=-r; dx<=r && !found; dx++) {
+        for (let dy=-r; dy<=r; dy++) {
+          const tx = sx+dx, ty = sy+dy;
+          if (isTilePassableCenter(tx, ty)) { sx = tx; sy = ty; found = true; break; }
+        }
+      }
+    }
+  }
+  player.x = sx; player.y = sy;
+  player.dx = 0; player.dy = 0;
+  player.wantDx = 1; player.wantDy = 0;
+}
+
+/* -------- Round & HUD -------- */
+function spawnRound(word) {
+  gameState.roundWord = word;
+  gameState.progressIndex = 0;
+  gameState.timeLeftMs = CONFIG.roundTimeMs;
+  gameState.letters.length = 0;
+
+  // Reset player to a passable lane for each round
+  spawnPlayer();
+
+  // Seed RNG from word for reproducibility
+  let seed = 0;
+  for (let i=0;i<word.length;i++) seed = (seed*131 + word.charCodeAt(i))>>>0;
+  rnd.seed(seed);
+
+  // Candidate letter spawns: pellet tiles only, away from player & other letters
+  const candidates = [];
+  for (let y=0;y<CONFIG.rows;y++) for (let x=0;x<CONFIG.cols;x++) {
+    if (isPellet(x,y)) {
+      const d = dist2(x+0.5,y+0.5, player.x, player.y);
+      if (d > 9) candidates.push([x+0.5,y+0.5]);
+    }
+  }
+  const placed = [];
+  for (let i=0;i<word.length;i++) {
+    let chosen = null;
+    for (let tries=0; tries<30 && candidates.length; tries++) {
+      const idx = rnd.next() % candidates.length;
+      const p = candidates[idx];
+      const okPlayer = dist2(p[0],p[1], player.x, player.y) >= 4.0;
+      const okOthers = placed.every(q => dist2(p[0],p[1], q[0], q[1]) >= 4.0);
+      if (okPlayer && okOthers) { chosen = candidates.splice(idx,1)[0]; break; }
+      else { candidates.splice(idx,1); } // discard too-close candidate
+    }
+    if (!chosen) { chosen = nearestPelletCenter(14.5, 11.5); } // guaranteed to be a pellet
+    placed.push(chosen);
+    gameState.letters.push({ glyph: word[i], order: i, x: chosen[0], y: chosen[1], dx: 0, dy: 0, speed: CONFIG.letterSpeedTilesPerSec, state: "moving" });
+  }
+
+  for (const L of gameState.letters) chooseLetterDir(L, true);
+  msgEl.textContent = 'New word!';
+  updateHUD();
+}
+
+function updateHUD() {
+  scoreEl.textContent = `Score: ${gameState.score}`;
+  livesEl.textContent = `Lives: ${gameState.lives}`;
+  const secs = Math.max(0, Math.floor(gameState.timeLeftMs/1000));
+  timeEl.textContent = `Time: ${fmtMMSS(secs)}`;
+  if (secs <= 10) timeEl.classList.add('lowTime'); else timeEl.classList.remove('lowTime');
+  blanksEl.innerHTML = renderBlanks(gameState.roundWord, gameState.progressIndex);
+  const nextSpan = document.querySelector('#next .badge');
+  const nextCh = gameState.roundWord[gameState.progressIndex] || '?';
+  nextSpan.textContent = CONFIG.showHint ? nextCh : '?';
+  const btn = document.getElementById('toggleHint');
+  btn.textContent = `Hint: ${CONFIG.showHint ? 'ON' : 'OFF'}`;
+}
+
+/* -------- Input -------- */
+window.addEventListener('keydown', (e)=>{
+  if (e.key === 'ArrowUp') { player.wantDx=0; player.wantDy=-1; }
+  else if (e.key === 'ArrowDown') { player.wantDx=0; player.wantDy=1; }
+  else if (e.key === 'ArrowLeft') { player.wantDx=-1; player.wantDy=0; }
+  else if (e.key === 'ArrowRight') { player.wantDx=1; player.wantDy=0; }
+  else if (e.key.toLowerCase() === 'p') { gameState.paused = !gameState.paused; msgEl.textContent = gameState.paused ? 'PAUSED' : ''; }
+  else if (e.key.toLowerCase() === 'h') { CONFIG.showHint = !CONFIG.showHint; updateHUD(); }
+});
+
+/* -------- Movement & Collisions -------- */
+function wrapX(x) {
+  if (x < -0.5) return CONFIG.cols-0.5;
+  if (x > CONFIG.cols-0.5) return 0.5;
+  return x;
+}
+
+function chooseLetterDir(L, force=false) {
+  if (!force && !atCenter(L.x, L.y)) return;
+  const cx = Math.floor(L.x), cy = Math.floor(L.y);
+  const dirs = [];
+  const options = [[1,0],[-1,0],[0,1],[0,-1]];
+  for (const [dx,dy] of options) {
+    const nx = cx + dx, ny = cy + dy;
+    if (isPellet(nx,ny)) {
+      if (!(dx === -L.dx && dy === -L.dy)) dirs.push([dx,dy]); // avoid instant reverse
+    }
+  }
+  if (dirs.length===0) dirs.push([-L.dx,-L.dy]);
+  const pick = rnd.pick(dirs);
+  L.dx = pick[0]; L.dy = pick[1];
+}
+
+function perpendicularDirs(dx, dy) {
+  if (dx !== 0) return [[0,1],[0,-1]];
+  if (dy !== 0) return [[1,0],[-1,0]];
+  return [[1,0],[-1,0]];
+}
+
+function stepLetters(dt) {
+  for (const L of gameState.letters) {
+    if (L.state !== 'moving') continue;
+
+    alignToGrid(L);
+
+    if (atCenter(L.x, L.y) && !canGoPellet(L.x, L.y, L.dx, L.dy)) {
+      chooseLetterDir(L, true);
+    }
+
+    const spd = L.speed * dt;
+    L.x += L.dx * spd;
+    L.y += L.dy * spd;
+
+    L.x = wrapX(L.x);
+
+    if (!canGoPellet(L.x, L.y, L.dx, L.dy) && !atCenter(L.x, L.y)) {
+      if (L.dx !== 0) L.x = Math.floor(L.x) + 0.5;
+      if (L.dy !== 0) L.y = Math.floor(L.y) + 0.5;
+      L.dx = L.dy = 0;
+      chooseLetterDir(L, true);
+    }
+
+    if (atCenter(L.x, L.y) && (rnd.next() % 4 === 0)) {
+      chooseLetterDir(L, false);
+    }
+  }
+
+  // Separation (avoid overlapping letters)
+  for (let i=0;i<gameState.letters.length;i++) {
+    const A = gameState.letters[i];
+    if (A.state !== 'moving') continue;
+    for (let j=i+1;j<gameState.letters.length;j++) {
+      const B = gameState.letters[j];
+      if (B.state !== 'moving') continue;
+      if (dist2(A.x,A.y,B.x,B.y) < 0.16) {
+        const dirsA = perpendicularDirs(A.dx, A.dy).filter(([dx,dy]) => canGoPellet(A.x, A.y, dx, dy));
+        const dirsB = perpendicularDirs(B.dx, B.dy).filter(([dx,dy]) => canGoPellet(B.x, B.y, dx, dy));
+        if (dirsA.length) { const pa = rnd.pick(dirsA); A.dx = pa[0]; A.dy = pa[1]; }
+        if (dirsB.length) { const pb = rnd.pick(dirsB); B.dx = pb[0]; B.dy = pb[1]; }
+      }
+    }
+  }
+}
+
+function handleCollisions() {
+  const need = gameState.roundWord[gameState.progressIndex];
+  for (const L of gameState.letters) {
+    if (L.state !== 'moving') continue;
+    if (dist2(player.x, player.y, L.x, L.y) < 0.25) {
+      if (L.glyph === need) {
+        L.state = 'collected';
+        gameState.progressIndex++;
+        gameState.score += CONFIG.rewards.perCorrectLetter;
+        msgEl.textContent = `Good! Collected '${L.glyph}'`;
+        if (gameState.progressIndex >= gameState.roundWord.length) {
+          gameState.score += CONFIG.rewards.wordBonus;
+          msgEl.textContent = `Word complete: ${gameState.roundWord}! +${CONFIG.rewards.wordBonus}`;
+          const nextWord = CONFIG.words[(CONFIG.words.indexOf(gameState.roundWord)+1) % CONFIG.words.length];
+          spawnRound(nextWord);
+        }
+        updateHUD();
+      } else {
+        gameState.score = Math.max(0, gameState.score - CONFIG.penalties.wrongLetter);
+        msgEl.textContent = `Wrong order! Need '${need}'`;
+        updateHUD();
+      }
+    }
+  }
+}
+
+function stepPlayer(dt) {
+  alignToGrid(player);
+
+  if (atCenter(player.x, player.y) && canGo(player.x, player.y, player.wantDx, player.wantDy)) {
+    player.dx = player.wantDx; player.dy = player.wantDy;
+  }
+
+  if (!canGo(player.x, player.y, player.dx, player.dy) && atCenter(player.x, player.y)) {
+    player.dx = player.dy = 0;
+  }
+
+  // Face in the direction of current heading (0=right, +π/2=down, etc.)
+  if (player.dx !== 0 || player.dy !== 0) {
+    player.lastFacing = Math.atan2(player.dy, player.dx);
+  }
+
+  const spd = player.speed * dt;
+  player.x += player.dx * spd;
+  player.y += player.dy * spd;
+
+  player.x = wrapX(player.x);
+
+  if (!canGo(player.x, player.y, player.dx, player.dy) && !atCenter(player.x, player.y)) {
+    if (player.dx !== 0) player.x = Math.floor(player.x) + 0.5;
+    if (player.dy !== 0) player.y = Math.floor(player.y) + 0.5;
+    player.dx = player.dy = 0;
+  }
+
+  const speedFactor = (Math.abs(player.dx) + Math.abs(player.dy)) > 0 ? 1 : 0.5;
+  player.anim += dt * 10 * speedFactor;
+}
+
+/* -------- Rendering -------- */
+function drawMaze() {
+  const ts = CONFIG.tileSize;
+  ctx.fillStyle = CONFIG.colors.bg;
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // Pellets (visual only)
+  ctx.fillStyle = CONFIG.colors.dot;
+  for (let y=0; y<CONFIG.rows; y++) {
+    for (let x=0; x<CONFIG.cols; x++) {
+      if (MAP[y][x] === 2) {
+        ctx.beginPath();
+        ctx.arc(x*ts+ts/2, y*ts+ts/2, 2, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Walls
+  ctx.fillStyle = CONFIG.colors.wall;
+  for (let y=0; y<CONFIG.rows; y++) {
+    for (let x=0; x<CONFIG.cols; x++) {
+      if (MAP[y][x] === 1) {
+        ctx.fillRect(x*ts, y*ts, ts, ts);
+      }
+    }
+  }
+}
+
+function drawPlayer() {
+  const ts = CONFIG.tileSize;
+  const px = player.x * ts, py = player.y * ts;
+
+  // Mouth aperture (0 .. ~0.5π)
+  const mouth = (Math.sin(player.anim) * 0.25 + 0.25) * Math.PI;
+
+  // Facing angle: 0=right, +π/2=down, π=left, −π/2=up
+  const facing = player.lastFacing || 0;
+
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(facing);
+
+  ctx.fillStyle = CONFIG.colors.pac;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  // Draw circle wedge oriented to +X (right) by default; rotating by 'facing' yields correct orientation.
+  ctx.arc(0, 0, ts * 0.48, mouth / 2, 2 * Math.PI - mouth / 2, false);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawLetters() {
+  const ts = CONFIG.tileSize;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `16px "Courier New", monospace`;
+  for (const L of gameState.letters) {
+    if (L.state !== 'moving') continue;
+    const px = L.x * ts, py = L.y * ts;
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 2;
+    ctx.strokeText(L.glyph, px, py);
+    ctx.fillText(L.glyph, px, py);
+
+    const need = gameState.roundWord[gameState.progressIndex];
+    if (L.glyph === need && CONFIG.showHint) {
+      ctx.beginPath();
+      ctx.arc(px, py, ts*0.55, 0, Math.PI*2);
+      ctx.strokeStyle = '#ff0';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+}
+
+/* -------- Timer & Loop -------- */
+function stepTimer(dtMs) {
+  gameState.timeLeftMs -= dtMs;
+  if (gameState.timeLeftMs <= 0) {
+    gameState.lives -= 1;
+    if (gameState.lives <= 0) {
+      gameState.lives = 0;
+      gameState.running = false;
+      msgEl.textContent = "Game Over — Press F5 to restart";
+    } else {
+      msgEl.textContent = "Time up! Lost a life; round reset";
+      spawnRound(gameState.roundWord);
+    }
+    updateHUD();
+  }
+}
+
+let lastTs = performance.now();
+let acc = 0;
+const FIXED_DT = 1/60;
+
+function loop(ts) {
+  if (!gameState.running) return drawFrame(0);
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (ts - lastTs)/1000);
+  lastTs = ts;
+  if (gameState.paused) return drawFrame(0);
+
+  acc += dt;
+  while (acc >= FIXED_DT) {
+    stepPlayer(FIXED_DT);
+    stepLetters(FIXED_DT);
+    handleCollisions();
+    stepTimer(FIXED_DT * 1000);
+    acc -= FIXED_DT;
+  }
+  drawFrame(acc / FIXED_DT);
+}
+
+function drawFrame(alpha) {
+  drawMaze();
+  drawLetters();
+  drawPlayer();
+}
+
+/* -------- Init -------- */
+function start() {
+  gameState.score = 0;
+  gameState.lives = CONFIG.lives;
+  spawnRound(CONFIG.words[0]);
+  updateHUD();
+  requestAnimationFrame(loop);
+}
+
+start();
+</script>
+</body>
+</html>

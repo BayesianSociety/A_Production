@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/**
+ * ---------- Core media ----------
+ */
+model MediaAsset {
+  id        String   @id @default(cuid())
+  kind      String // 'image' | 'audio' | 'video'
+  url       String
+  alt       String?
+  createdAt DateTime @default(now())
+
+  // Back-relations (give each relation a name)
+  questions Question[] @relation("QuestionMedia")
+  bodyParts BodyPart[] @relation("BodyPartImage")
+  organisms Organism[] @relation("OrganismImage")
+}
+
+/**
+ * ---------- Anatomy ----------
+ */
+model BodyPart {
+  id         String           @id @default(cuid())
+  name       String
+  system     String
+  ageBand    String // "5-7" | "8-10"
+  imageId    String?
+  image      MediaAsset?      @relation("BodyPartImage", fields: [imageId], references: [id])
+  facts      Json // use JSON array of strings instead of String[]
+  placements OrganPlacement[]
+  functions  OrganFunction[]
+}
+
+model OrganPlacement {
+  id         String   @id @default(cuid())
+  bodyPartId String
+  x          Float // normalized 0..1
+  y          Float
+  width      Float
+  height     Float
+  bodyPart   BodyPart @relation(fields: [bodyPartId], references: [id])
+}
+
+model OrganFunction {
+  id         String   @id @default(cuid())
+  bodyPartId String
+  text       String
+  correct    Boolean  @default(false)
+  bodyPart   BodyPart @relation(fields: [bodyPartId], references: [id])
+}
+
+/**
+ * ---------- Organisms ----------
+ */
+model Organism {
+  id        String      @id @default(cuid())
+  common    String
+  habitat   String
+  lifeCycle Json // e.g., ["egg","tadpole","froglet","frog"]
+  ageBand   String
+  imageId   String?
+  image     MediaAsset? @relation("OrganismImage", fields: [imageId], references: [id])
+}
+
+/**
+ * ---------- Questions & attempts ----------
+ */
+model Question {
+  id       String      @id @default(cuid())
+  topic    String // 'anatomy' | 'life-cycle' | 'microbes'
+  type     String // 'mcq' | 'drag-label' | 'sequence' | 'sort'
+  prompt   String
+  data     Json
+  mediaId  String?
+  media    MediaAsset? @relation("QuestionMedia", fields: [mediaId], references: [id])
+  ageBand  String
+  answers  Answer[]
+  attempts Attempt[] // back-relation for Attempt.question
+}
+
+model Answer {
+  id         String   @id @default(cuid())
+  questionId String
+  text       String?
+  payload    Json?
+  correct    Boolean  @default(false)
+  question   Question @relation(fields: [questionId], references: [id])
+}
+
+model Attempt {
+  id         String   @id @default(cuid())
+  questionId String
+  kidId      String
+  startedAt  DateTime @default(now())
+  msToFirst  Int?
+  correct    Boolean?
+  tries      Int      @default(0)
+  details    Json?
+  question   Question @relation(fields: [questionId], references: [id])
+}

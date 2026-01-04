@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Red Dot Counter – 1 cm</title>
+  <style>
+    :root { color-scheme: light; }
+    html, body { height: 100%; margin: 0; background: #fff; }
+    body { display: grid; }
+
+    /* Full-viewport, responsive white canvas */
+    canvas#stage {
+      width: 100vw; /* responsive CSS size */
+      height: 100vh;
+      display: block;
+      background: #fff;
+    }
+
+    /* Bottom-right small counter (on top of canvas) */
+    #hud {
+      position: fixed;
+      right: 0.75rem;
+      bottom: 0.5rem;
+      font: 700 clamp(12px, 2vw, 18px)/1 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color: #111;
+      background: rgba(255, 255, 255, 0.7);
+      padding: 0.2rem 0.45rem;
+      border-radius: 0.5rem;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+      pointer-events: none; /* click-through */
+      visibility: hidden; /* hidden until dots are drawn */
+    }
+
+    /* Big centered number (covers ~20% of viewport via 20vmin font-size) */
+    #big {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: #fff;
+      font-weight: 800;
+      font-size: 20vmin; /* ~20% of the smaller viewport dimension */
+      line-height: 1;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color: #111;
+      visibility: hidden; /* shown during big-number phase */
+    }
+
+    /* Range picker overlay (integrated from range_picker.html styling) */
+    #pickerOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(246, 246, 246, 0.94);
+      color: #151414;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: clamp(16px, 4vw, 48px) 12px 48px;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans", Arial, sans-serif;
+      z-index: 10;
+      transition: opacity 0.25s ease;
+    }
+    #pickerOverlay[aria-hidden="true"] {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .picker-card {
+      width: min(1160px, 94vw);
+      display: grid;
+      gap: 32px;
+    }
+    .picker-card header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    #languageSelect {
+      min-width: 160px;
+      padding: 0.55rem 0.75rem;
+      font: 600 1rem/1.2 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      border-radius: 10px;
+      border: 1px solid rgba(0,0,0,0.16);
+      background: #fff;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+    }
+    #languageSelect:focus-visible {
+      outline: 3px solid rgba(208,38,96,0.45);
+      outline-offset: 2px;
+    }
+    .picker-title {
+      margin: 0;
+      font-size: clamp(1.5rem, 3vw, 2.25rem);
+      font-weight: 800;
+    }
+    #rangeGrid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: clamp(20px, 4vw, 40px) clamp(32px, 5vw, 64px);
+      justify-items: center;
+      align-items: center;
+    }
+    .range-btn {
+      min-width: 260px;
+      width: 100%;
+      max-width: 340px;
+      height: clamp(60px, 9vw, 82px);
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      outline: none;
+      background: #d02660;
+      color: #ffffff;
+      font-weight: 800;
+      font-size: clamp(1.35rem, 3vw, 1.9rem);
+      letter-spacing: 0.5px;
+      box-shadow: 0 6px 0 #a61b4c, 0 12px 22px rgba(0,0,0,.14);
+      transition: transform .1s ease, box-shadow .12s ease, filter .12s ease, background .12s ease;
+    }
+    .range-btn:hover { background: #bb1f54; filter: brightness(1.02); }
+    .range-btn:active { transform: translateY(3px); box-shadow: 0 3px 0 #a61b4c, 0 8px 16px rgba(0,0,0,.14); }
+    .range-btn:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+    .range-btn.active { background: #bb1f54; }
+    #pickedDisplay {
+      min-height: 1.4em;
+      margin: 0;
+      font-weight: 700;
+      text-align: center;
+    }
+    #openPicker {
+      position: fixed;
+      top: 0.75rem;
+      left: 0.75rem;
+      z-index: 5;
+      background: rgba(255,255,255,0.85);
+      border: 1px solid rgba(0,0,0,0.12);
+      border-radius: 999px;
+      font: 600 14px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      padding: 0.45rem 0.85rem;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+      transition: background 0.15s ease;
+    }
+    #openPicker:hover { background: rgba(255,255,255,0.95); }
+    #openPicker:active { background: rgba(240,240,240,0.95); }
+    #openPicker:focus-visible { outline: 3px solid rgba(208,38,96,0.65); outline-offset: 2px; }
+
+    @media (max-width: 1024px){
+      #rangeGrid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 640px){
+      #rangeGrid { grid-template-columns: 1fr; }
+      .range-btn { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="stage" aria-label="White canvas with red dots and a counter"></canvas>
+  <div id="hud" aria-live="polite"></div>
+  <div id="big" aria-live="assertive"></div>
+  <button id="openPicker" type="button" aria-haspopup="dialog" aria-controls="pickerOverlay" aria-expanded="true">
+    Choose range
+  </button>
+
+  <section id="pickerOverlay" role="dialog" aria-modal="true" aria-hidden="false">
+    <div class="picker-card">
+      <header>
+        <h1 class="picker-title">Choose number range</h1>
+        <label id="pickerHint" for="languageSelect">Select language</label>
+        <select id="languageSelect">
+          <option value="en-US">English</option>
+          <option value="nl-NL">Nederlands</option>
+        </select>
+      </header>
+      <div id="rangeGrid" aria-label="Select number range"></div>
+      <p id="pickedDisplay" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <script>
+    (function(){
+      const canvas = document.getElementById('stage');
+      const hud = document.getElementById('hud');
+      const big = document.getElementById('big');
+      const overlay = document.getElementById('pickerOverlay');
+      const rangeGrid = document.getElementById('rangeGrid');
+      const pickedDisplay = document.getElementById('pickedDisplay');
+      const openPicker = document.getElementById('openPicker');
+      const languageSelect = document.getElementById('languageSelect');
+
+      const ctx = canvas.getContext('2d');
+
+      let dpr = window.devicePixelRatio || 1;
+      const state = { round: 0, phase: 'idle', range: null, runId: 0 }; // phase: 'dots' | 'big' | 'idle'
+      let mixButton = null;
+
+      // Utilities
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+      // Convert centimeters to CSS pixels using a measured element (with safe fallback)
+      function cmToCssPx(cm){
+        const probe = document.createElement('div');
+        probe.style.position = 'absolute';
+        probe.style.visibility = 'hidden';
+        probe.style.width = cm + 'cm';
+        document.body.appendChild(probe);
+        const px = probe.getBoundingClientRect().width;
+        probe.remove();
+        // Fallback ~ 37.795 px per cm (96dpi/inch / 2.54cm)
+        return (px && isFinite(px) && px > 0) ? px : 37.7952755906 * cm;
+      }
+
+      function resizeCanvas(){
+        const { clientWidth, clientHeight } = canvas;
+        dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(1, Math.floor(clientWidth * dpr));
+        canvas.height = Math.max(1, Math.floor(clientHeight * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw using CSS pixel units
+      }
+
+      function fitToViewport(){
+        resizeCanvas();
+      }
+
+      function drawWhiteBackground(){
+        ctx.save();
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+        ctx.restore();
+      }
+
+      function drawDot(x, y, radius){
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff0000'; // pure red for maximum visibility
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function randomPositions(n, radius){
+        const positions = [];
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        const minX = radius, minY = radius;
+        const maxX = Math.max(radius, w - radius);
+        const maxY = Math.max(radius, h - radius);
+        for (let i = 0; i < n; i++) {
+          const x = Math.random() * (maxX - minX) + minX;
+          const y = Math.random() * (maxY - minY) + minY;
+          positions.push([x, y]);
+        }
+        return positions;
+      }
+
+      async function showDots(n){
+        state.round = n;
+        state.phase = 'dots';
+        fitToViewport();
+        const diameterPx = cmToCssPx(1);
+        const radiusPx = diameterPx / 2;
+        const positions = randomPositions(n, radiusPx);
+
+        drawWhiteBackground();
+        for (const [x, y] of positions) drawDot(x, y, radiusPx);
+
+        hud.textContent = String(n);
+        hud.style.visibility = 'visible';
+        big.style.visibility = 'hidden';
+
+        await sleep(1000);
+      }
+
+      const speech = 'speechSynthesis' in window ? window.speechSynthesis : null;
+      const speechState = {
+        voices: [],
+        loaded: false,
+        preferredLang: ((navigator.language || '').toLowerCase().startsWith('nl')) ? 'nl-NL' : 'en-US'
+      };
+      const numberWords = {
+        en: { 1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six', 7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten' },
+        nl: { 1: 'een', 2: 'twee', 3: 'drie', 4: 'vier', 5: 'vijf', 6: 'zes', 7: 'zeven', 8: 'acht', 9: 'negen', 10: 'tien' }
+      };
+      async function loadVoices(){
+        if (!speech) return [];
+        const existing = speech.getVoices();
+        if (existing.length) return existing;
+        return new Promise(resolve => {
+          const handle = () => {
+            speech.removeEventListener('voiceschanged', handle);
+            resolve(speech.getVoices());
+          };
+          speech.addEventListener('voiceschanged', handle, { once: true });
+          // Fallback in case voiceschanged never fires
+          setTimeout(() => resolve(speech.getVoices()), 750);
+        });
+      }
+      async function speakNumber(n){
+        if (!speech) return;
+        const langKey = speechState.preferredLang.startsWith('nl') ? 'nl' : 'en';
+        const phrase = numberWords[langKey][n] || String(n);
+        speech.cancel();
+        if (!speechState.loaded){
+          speechState.voices = await loadVoices();
+          speechState.loaded = true;
+        }
+        const utterance = new SpeechSynthesisUtterance(phrase);
+        utterance.lang = speechState.preferredLang;
+        const selectedVoice =
+          speechState.voices.find(v => v.lang === speechState.preferredLang) ||
+          speechState.voices.find(v => v.lang && v.lang.toLowerCase().startsWith(langKey));
+        if (selectedVoice) utterance.voice = selectedVoice;
+        speech.speak(utterance);
+      }
+
+      async function showBig(n){
+        state.phase = 'big';
+        drawWhiteBackground();
+        hud.style.visibility = 'hidden';
+        big.textContent = String(n);
+        big.style.visibility = 'visible';
+        await speakNumber(n);
+        const holdMs = n >= 101 ? 1500 : 1000;
+        await sleep(holdMs);
+        // Clear again after the big number holds for 1 second
+        big.style.visibility = 'hidden';
+        drawWhiteBackground();
+      }
+
+      async function runSequence(sequence){
+        const currentRun = ++state.runId;
+        for (const n of sequence){
+          if (currentRun !== state.runId) return;
+          await showDots(n);
+          if (currentRun !== state.runId) return;
+          await showBig(n);
+          if (currentRun !== state.runId) return;
+        }
+        state.phase = 'idle';
+      }
+
+      function parseRange(label){
+        const [start, end] = label.split('-').map(part => parseInt(part, 10));
+        if (Number.isFinite(start) && Number.isFinite(end) && start <= end) {
+          return { start, end };
+        }
+        return null;
+      }
+
+      function buildRangePicker(){
+        const ranges = [
+          '1-10','11-20','21-30',
+          '31-40','41-50','51-60',
+          '61-70','71-80','81-90',
+          '91-100','101-110','111-120',
+          '121-130','131-140','141-150'
+        ];
+        rangeGrid.innerHTML = '';
+        ranges.forEach(label => {
+          const btn = document.createElement('button');
+          btn.className = 'range-btn';
+          btn.type = 'button';
+          btn.textContent = label;
+          btn.dataset.range = label;
+          btn.setAttribute('aria-label', `Choose range ${label.replace('-', ' to ')}`);
+          btn.addEventListener('click', () => {
+            rangeGrid.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            if (mixButton) mixButton.classList.remove('active');
+            pickedDisplay.textContent = `Selected: ${label}`;
+            const parsed = parseRange(label);
+            if (!parsed) return;
+            state.range = parsed;
+            hidePicker();
+            startSequence(parsed.start, parsed.end);
+          });
+          rangeGrid.appendChild(btn);
+        });
+
+        mixButton = document.createElement('button');
+        mixButton.className = 'range-btn';
+        mixButton.type = 'button';
+        mixButton.textContent = 'Mix';
+        mixButton.id = 'mixButton';
+        mixButton.style.gridColumn = '2';
+        mixButton.style.justifySelf = 'stretch';
+        mixButton.addEventListener('click', () => {
+          const activeRange = state.range || { start: 1, end: 150 };
+          state.range = activeRange;
+          rangeGrid.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+          mixButton.classList.add('active');
+          pickedDisplay.textContent = `Mixing: ${activeRange.start}-${activeRange.end}`;
+          hidePicker();
+          startMixSequence(activeRange);
+        });
+        rangeGrid.appendChild(mixButton);
+      }
+
+      function hidePicker(){
+        overlay.setAttribute('aria-hidden', 'true');
+        openPicker.setAttribute('aria-expanded', 'false');
+      }
+
+      function showPicker(){
+        clearAndReset();
+        overlay.setAttribute('aria-hidden', 'false');
+        openPicker.setAttribute('aria-expanded', 'true');
+      }
+
+      function clearAndReset(){
+        ++state.runId; // cancel any running sequence
+        state.phase = 'idle';
+        big.style.visibility = 'hidden';
+        hud.style.visibility = 'hidden';
+        drawWhiteBackground();
+      }
+
+      function startSequence(start, end){
+        clearAndReset();
+        const sequence = [];
+        for (let n = start; n <= end; n++) sequence.push(n);
+        runSequence(sequence);
+      }
+
+      function startMixSequence(range){
+        clearAndReset();
+        const sequence = [];
+        for (let n = range.start; n <= range.end; n++) sequence.push(n);
+        for (let i = sequence.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [sequence[i], sequence[j]] = [sequence[j], sequence[i]];
+        }
+        runSequence(sequence);
+      }
+
+      // Handle resizes gracefully
+      let resizeTimeout;
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+          resizeCanvas();
+          if (state.phase === 'big') {
+            // keep big text crisp; background stays white
+            return;
+          }
+          if (state.phase === 'dots') {
+            // redraw current round's dots approximately (positions will re-randomize)
+            showDots(state.round);
+          }
+        }, 120);
+      }, { passive: true });
+
+      // Start immediately when DOM is ready
+      document.addEventListener('DOMContentLoaded', () => {
+        buildRangePicker();
+        drawWhiteBackground();
+        languageSelect.value = speechState.preferredLang.startsWith('nl') ? 'nl-NL' : 'en-US';
+      }, { once: true });
+
+      openPicker.addEventListener('click', () => {
+        showPicker();
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          showPicker();
+        }
+      });
+
+      languageSelect.addEventListener('change', () => {
+        speechState.preferredLang = languageSelect.value;
+      });
+    })();
+  </script>
+</body>
+</html>

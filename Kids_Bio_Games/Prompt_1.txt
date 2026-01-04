@@ -1,0 +1,42 @@
+Biology educational program. You are an excellent javascript and html5 engineer. You're also very good in local database driven software development. At the same time you are a great researcher and children education expert. For that you only use the latest scientific papers from renowned universities and institutions. Investigate 3 ideas on how to develop an educational program for teaching Biology and especially anathomy and life sciences to early kids from 5 to 10. 
+I don't want children to be forced to draw anything. 
+I want children to choose from options and also to be able to drag and drop challenges. No drawing or uploading tasks.
+Prepare an overview of the ideas and general context prompt to elaborate that idea into code framework. I want the following technologies for my biology application: - Prisma: type-safe ORM that maps JS objects to the SQLite schema (prisma/schema.prisma) so scripts and the API can read/write animals, media, questions, etc. without manual SQL. It also handles migrations (npm run migrate) and generates the client used in scripts and routes. - Express: HTTP server framework; src/server.js uses it to define middleware, mount the /api router, and serve static files/uploads. And any other necessary to run this stack. Stack Overview - Node.js project with ES modules, Express, Prisma, and supporting libs; - The HTTP server is an Express app that loads. - The browser UI is a static HTML/JS experience that calls the backend through public/js/data-service.js;
+
+
+
+
+Financial framwork
+You are a top expert on international macroeconomics, microeconomics and finance. You specialize in publicly traded companies. You are also an expert on individual sectors and segments of the economy. You only base yourself on official financial reports, and read other macroeconomic reports from renowned international academic sources. For companies reports you only use sec.gov as a source. Explain how to create a context prompt which would be used to create a framework which would allow me to select the best companies from financial, healthcare, biotech and IT sectors. For that purpose apart from the financial sources for individual companies, macro sources for sectors of economy, also take into account what the biggest investment funds have in their holdings. And the biggest fund managers disclosures. Use only official sources, do not make things up. Remember this is supposed to be a framework for financial analysis. Also, it can include programming code if necessary.
+
+
+You are a top expert on international macroeconomics, microeconomics and finance. You specialize in publicly traded companies. You are also an expert on individual sectors and segments of the economy. You only base yourself on official financial reports, and read other macroeconomic reports from renowned international academic sources. For companies reports you only use sec.gov as a source. Explain how to create a framework for analysis of holdings of investment funds and investment managers. The investment funds should come from the US, Luxembourg and Ireland.
+
+
+
+A future where knowledge workers (like engineers) will act as project architects, orchestrating teams of AI agents to execute solutions. The most critical skill will be asking the right questions, not manual execution.
+
+
+
+Project architecture:
+A Framework is a set of questions which need to be answered:
+1. What the best performing investment funds own.
+2. What fund managers own.
+3. What are the attributes of the best performing companies.
+4. What are the industries we are interested in.
+5. Investment funds and fund managers from US, Luxembourg, Ireland.
+6. What are the attributes of the best performing funds.
+7. Industries: fintech, healthcare, biotech, IT, microprocessor, gaming, quantum, nulcear energy, robotics sectors.
+8. Find out which industries have the highest chance of becoming new leaders.
+9. What are the strategies of companies.
+10. What are the strategies of investment funds.
+11. What are new products, and what products the company is working on.
+12. How long the current management is in place and when was it replaced.
+13. What the new management promisses.
+14. Is the management on social media?
+15. Is there a high competition in the market the company operates in.
+16. What advantages does the company have over others, is it a Meme company?
+17. Do not use abreviations.
+
+
+

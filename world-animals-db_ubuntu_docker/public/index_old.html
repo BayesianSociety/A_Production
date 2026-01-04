@@ -1,0 +1,930 @@
+
+
+
+/*
+Usage:
+cd C:\Users\AndrzejukAdam\AI\world-animals-db
+npm run dev
+loclahost:3000
+
+You are an excellent programmer in javascript and a very meticulous documenter. You like clean code, which is well documented. I'm gonna give you a code. Do not change anything inside the code, which means do not change the code it self. But do reshuffle functions if needed. Make the code look cleaner. Document which part of the code does what. Use Capitals to Make headers of documentation.
+
+I want those explanations to be included in the code under each section.
+*/
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>World Animals Explorer — Local Map Overlay (fixed)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    /* ============================================================
+       GLOBAL PAGE STYLES
+       ------------------------------------------------------------
+       PURPOSE: DEFINE BASE TYPOGRAPHY, LAYOUT, AND BACKGROUND SO
+       THE FULLSCREEN MAP SITS BEHIND AN OVERLAY UI.
+       NOTES:
+       - BODY OVERFLOW IS HIDDEN SO THE MAP CAN OWN THE VIEWPORT.
+       - A CALM OCEAN-TONED BACKGROUND IS USED AS A FALLBACK.
+       ============================================================ */
+    html, body { height: 100%; }
+    body {
+      margin:0;
+      font-family: 'Comic Sans MS', Arial, sans-serif;
+      overflow: hidden;            /* Map takes the viewport; UI overlays it */
+      background: #eaf5ff;
+    }
+    * { box-sizing: border-box; }
+
+    /* ============================================================
+       EMBEDDED WORLD MAP CONTAINER (INJECTED VIA <object>)
+       ------------------------------------------------------------
+       PURPOSE: FIX THE MAP UNDER THE UI OVERLAY AND ENSURE IT
+       ALWAYS FILLS THE VIEWPORT.
+       ============================================================ */
+    #svg-world-map {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0; /* behind UI */
+      display: block;
+      background: #eaf5ff; /* ocean fallback while loading */
+    }
+
+    /* ============================================================
+       UI OVERLAY SHELL
+       ------------------------------------------------------------
+       PURPOSE: HOLDS ALL INTERACTIVE GAME PANELS ABOVE THE MAP.
+       POINTER EVENTS ARE DISABLED BY DEFAULT AND OPTED-IN PER PANEL.
+       ============================================================ */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none; /* panels opt-in */
+      isolation: isolate;
+    }
+    .panel { pointer-events: auto; background: #ffffffd8; backdrop-filter: blur(4px);
+             border: 1px solid #eef; border-radius: 14px; box-shadow: 0 8px 24px #0001; }
+
+    /* ============================================================
+       TOP BAR (LANG PICKER • TITLE • RESET)
+       ------------------------------------------------------------
+       PURPOSE: CONSISTENT HEADER FOR GLOBAL CONTROLS.
+       - GRID LAYOUT CENTERS THE TITLE WITH CONTROLS AT EDGES.
+       ============================================================ */
+    #top-bar { position: fixed; top: 10px; left: 0; right: 0; display: grid;
+               grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 12px; }
+    #langpicker { justify-self: start; }
+    #title { justify-self: center; }
+    #reset-btn { position: static; justify-self: end; }
+
+    #title h1 { margin: 0; font-size: 1.8em; color: #2e86c1; background: #ffffffcc; padding: 6px 12px;
+                border-radius: 10px; border: 1px solid #eef; }
+
+    /* ============================================================
+       PROGRESS BAR
+       ------------------------------------------------------------
+       PURPOSE: SHOW MISSION PROGRESS WITH A FILLING BAR AND TEXT.
+       ============================================================ */
+    #progress-wrap { position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
+                     width: min(820px, 92vw); }
+    #progress-bar-bg { width: 100%; background:#dcf8ff; height:18px; border-radius:12px; margin:0 auto; position:relative; }
+    #progress-bar { background:#58e490; height:100%; border-radius:12px; width:0%; transition:width .6s; }
+    #progress-info { position:absolute; inset:0; line-height:18px; font-size:.98em; color:#1b6963; font-weight:bold; letter-spacing:.5px; text-align:center; }
+
+    /* ============================================================
+       PROMPTS & VISUAL CUE
+       ------------------------------------------------------------
+       PURPOSE: PRIMARY GAME INSTRUCTIONS AND QUIZ PROMPTS.
+       ============================================================ */
+    #mission-block { position: fixed; top: 92px; left: 50%; transform: translateX(-50%);
+                     padding: 8px 12px; font-size: 1.02em; color: #7b5b1b; }
+    #prompt, #quizPrompt {
+      position: fixed; top: 128px; left: 50%; transform: translateX(-50%);
+      font-size: 1.2em; color: #166869; background:#ffffffcc; padding: 6px 12px; border-radius: 10px; border:1px solid #eef;
+    }
+    #visual-cue { position: fixed; top: 170px; left: 50%; transform: translateX(-50%); }
+
+    /* ============================================================
+       FEEDBACK & FACTS
+       ------------------------------------------------------------
+       PURPOSE: GIVE KID-FRIENDLY REACTIONS AND FUN FACTS.
+       ============================================================ */
+    #feedback {
+      position: fixed; bottom: 164px; left: 50%; transform: translateX(-50%);
+      font-size: 1.1em; font-weight: bold; color:#219831; background:#ffffffcc; padding:6px 12px; border-radius:10px; border:1px solid #eef;
+      min-height: 28px;
+    }
+    #fact-block {
+      position: fixed; bottom: 128px; left: 50%; transform: translateX(-50%);
+      font-size: 1.02em; color:#684c16; background:#ffffffcc; padding:6px 12px; border-radius:10px; border:1px solid #eef;
+      max-width: min(860px, 94vw); min-height: 24px;
+      text-wrap: balance;
+    }
+
+    /* ============================================================
+       ANIMAL CHOICES (BOTTOM PANEL)
+       ------------------------------------------------------------
+       PURPOSE: RENDER ANIMAL CHOICE GRID WITH BIG TAPPABLE CARDS.
+       ============================================================ */
+    #animals-panel {
+      position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; width: min(1000px, 96vw);
+      padding: 10px 10px 4px; display: inline-block;
+    }
+    #animal-row { margin: 0; }
+    .animal { display:inline-block; margin: 12px 10px; cursor:pointer; outline:none; text-align:center; vertical-align:top; transition: transform .2s; }
+    .animal:active { transform: scale(1.12); }
+    .animal img { width: 112px; height: 112px; object-fit: cover; border-radius: 18px;
+                  border: 4px solid #e0fffb; box-shadow: 0 2px 12px #00000014; background: #fff; }
+    .label { display:inline-block; margin-top:6px; font-size:1.02em; color:#446368; background:#fffbe0;
+             border-radius:8px; padding:1px 10px; }
+
+    /* ============================================================
+       RIGHT RAIL (STICKERS • ALBUM • TROPHIES)
+       ------------------------------------------------------------
+       PURPOSE: SHOW COLLECTIBLES AND A MINI-ALBUM.
+       ============================================================ */
+    #right-rail { position: fixed; right: 12px; top: 120px; width: min(320px, 48vw); display: grid; gap: 10px; }
+    #album { margin:0; width: 100%; background: #f5fbe4; border-radius:16px; border:2px solid #bdd6c1;
+             box-shadow: 0 1px 12px #8882; padding: 10px; }
+    #album h2 { font-size:1em; color: #2b663b; margin:0 0 7px; }
+    .album-pic{display:inline-block;margin:4px;text-align:center;}
+    .album-pic img{width:44px;height:44px;object-fit:cover;border-radius:8px;border:2px solid #eee;}
+    .album-label{font-size:.92em;color:#43825c;}
+    #sticker-board { font-size:1.3em; min-height: 30px; background:#ffffffcc; border:1px solid #eef; border-radius:12px; padding:8px; }
+    #trophy-cabinet { color:#bd7c2f; min-height:22px; background:#ffffffcc; border:1px solid #eef; border-radius:12px; padding:8px; }
+
+    /* ============================================================
+       HABITAT LABEL (MAP CAPTION)
+       ------------------------------------------------------------
+       PURPOSE: ANNOUNCE HIGHLIGHTED CONTINENTS/HABITATS.
+       ============================================================ */
+    #habitat-label{
+      position: fixed; left: 12px; bottom: 14px; font-size: .95em; color:#2b663b;
+      background:#ffffffcc; border:1px solid #eef; border-radius: 10px; padding: 6px 10px;
+      pointer-events: auto;
+    }
+
+    /* ============================================================
+       BUTTONS (LANG + RESET)
+       ------------------------------------------------------------
+       PURPOSE: SIMPLE, FRIENDLY BUTTON STYLING.
+       ============================================================ */
+    .btnLang{font-size:.95em;padding:4px 10px;margin:0 7px;border:1.5px solid #aeefff;border-radius:10px;background:#fafffb;cursor:pointer;}
+    .btnLang.selected{background:#e0ffd4;border-color:#88d776;color:#097;}
+    #reset-btn { font-size:1.02em; padding:6px 14px; background:#ffe066; border:2px solid #ffde66;
+                 border-radius:13px; cursor:pointer; color:#aa8707; box-shadow:0 2px 8px #ccc8; }
+
+    /* ============================================================
+       MILESTONE POPUP
+       ------------------------------------------------------------
+       PURPOSE: CELEBRATE PROGRESS WITH A POP SCALE ANIMATION.
+       ============================================================ */
+    #milestone-popup {
+      display:none; position:fixed; top:33%; left:50%; transform:translate(-50%,-50%);
+      font-size:1.8em; background:#fffbe0ee; color:#216869; border-radius:24px;
+      padding:30px 36px 22px; z-index:9998; border:3px solid #fffde9; box-shadow:0 12px 24px #9999cc44;
+      animation:popscale .7s cubic-bezier(.5,1.7,.13,.83);
+      pointer-events: auto;
+    }
+    @keyframes popscale { 0%{transform:translate(-50%,-50%) scale(.5);} 80%{transform:translate(-50%,-50%) scale(1.09);} 100%{transform:translate(-50%,-50%) scale(1);} }
+
+	#top-bar,
+	.panel,
+	#animals-panel,
+	#right-rail,
+	#habitat-label,
+	#milestone-popup,
+	#end-board-overlay {
+	  pointer-events: auto;
+	}
+
+    /* ============================================================
+       ERROR BANNER
+       ------------------------------------------------------------
+       PURPOSE: SURFACE JS ERRORS WITHOUT DEVELOPER TOOLS.
+       ============================================================ */
+    #err { position:fixed; left:8px; top:8px; z-index:99999; background:#ffe8e8; color:#a40000;
+           border:1px solid #ffbdbd; border-radius:8px; padding:6px 10px; display:none; font: 12px/1.4 monospace; }
+  </style>
+</head>
+<body>
+	<script src="/data/generated-data.js?v=3"></script>
+	<!-- 2) World map library -->
+	<script src="/lib/svg-world-map.js"></script>
+
+  <!-- ============================================================
+       ERROR SURFACE ELEMENT
+       ------------------------------------------------------------
+       PURPOSE: A SIMPLE DIV WHERE RUNTIME ERRORS ARE DISPLAYED.
+       ============================================================ -->
+  <div id="err"></div>
+
+  <!-- ============================================================
+       UI OVERLAY (GAME LAYER ABOVE MAP)
+       ------------------------------------------------------------
+       PURPOSE: HOLDS ALL INTERACTIVE PANELS, PROMPTS, AND METERS.
+       ============================================================ -->
+  <div class="overlay" aria-hidden="false">
+    <div id="top-bar">
+      <div id="langpicker"></div>
+      <div id="title"><h1>World Animals Explorer!</h1></div>
+      <button id="reset-btn">🔄 New Game</button>
+    </div>
+
+    <div id="progress-wrap">
+      <div id="progress-bar-bg">
+        <div id="progress-bar"></div>
+        <span id="progress-info"></span>
+      </div>
+    </div>
+
+    <div id="mission-block" class="panel"></div>
+    <div id="prompt" class="panel"></div>
+    <div id="visual-cue"></div>
+    <div id="quizPrompt" class="panel"></div>
+
+    <div id="feedback" class="panel"></div>
+    <div id="fact-block" class="panel"></div>
+
+    <div id="animals-panel" class="panel">
+      <div id="animal-row"></div>
+    </div>
+
+    <div id="right-rail">
+      <div id="sticker-board"></div>
+      <div id="album"><h2>My Animals</h2><div id="album-pics"></div></div>
+      <div id="trophy-cabinet"></div>
+    </div>
+
+    <div id="habitat-label" aria-live="polite"></div>
+    <div id="milestone-popup"></div>
+    <div id="end-board-overlay"></div>
+  </div>
+
+  <!-- ============================================================
+       AUDIO SFX
+       ------------------------------------------------------------
+       PURPOSE: AUDITORY FEEDBACK FOR CORRECT/INCORRECT AND CHEERS.
+       ============================================================ -->
+  <audio id="ding"  src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_1ba8b81d54.mp3?filename=correct-2-46134.mp3"></audio>
+  <audio id="oops"  src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_88b53da1dc.mp3?filename=error-2-46134.mp3"></audio>
+  <audio id="cheer" src="https://cdn.pixabay.com/download/audio/2022/10/17/audio_8c2fd2f2f8.mp3?filename=kids-cheering-114054.mp3"></audio>
+
+  <!-- Local world map library -->
+
+  <script>
+/* ============================================================
+   RUNTIME ERROR REPORTER
+   ------------------------------------------------------------
+   PURPOSE: LISTEN FOR WINDOW-LEVEL JS ERRORS AND SURFACE THEM
+   IN A BANNER SO ISSUES ARE VISIBLE WITHOUT DEVTOOLS.
+   BEHAVIOR: SETS THE TEXT AND MAKES THE ERROR BANNER VISIBLE.
+   ============================================================ */
+window.addEventListener('error', function(e){
+  var banner = document.getElementById('err');
+  banner.style.display = 'block';
+  banner.textContent = 'JS error: ' + (e.message || e.error);
+});
+
+/* ============================================================
+   DATA (SAME AS BEFORE)
+   ------------------------------------------------------------
+   PURPOSE: STATIC STRINGS AND TABLES USED ACROSS THE GAME.
+   NOTES:
+   - CONTINENTS: CODE→{EN,NL} LOOKUP FOR FRIENDLY NAMES.
+   - NICEWORDS/STICKERS: REINFORCERS FOR FEEDBACK/CONFETTI.
+   - BG GRADIENTS / MISSION IMAGES: THEME HOOKS (PLACEHOLDERS).
+   ============================================================ */
+/*
+const LANGUAGES = [
+  {code:'en', label:'English'},
+  {code:'nl', label:'Nederlands'}
+];
+*/
+const CONTINENTS = {
+  NA: {en:'North America', nl:'Noord-Amerika'},
+  SA: {en:'South America', nl:'Zuid-Amerika'},
+  EU: {en:'Europe',        nl:'Europa'},
+  AF: {en:'Africa',        nl:'Afrika'},
+  AS: {en:'Asia',          nl:'Azië'},
+  OC: {en:'Oceania',       nl:'Oceanië'},
+  AU: {en:'Australia',     nl:'Australië'},
+  AN: {en:'Antarctica',    nl:'Antarctica'}
+};
+
+<!-- replaces the three inline constant arrays/objects -->
+
+const niceWords = {
+  en:["Well done!","Awesome!","Great job!","Super!","Hooray!","That's right!"],
+  nl:["Goed gedaan!","Super!","Knap gedaan!","Goed zo!","Hoera!","Dat klopt!"]
+};
+const stickers = ["🦁","🐧","🐼","🐨","🐘","🦘","🐻‍❄️","🦒","🐅","🐫","🦅","🐬","🦊"];
+const bgGradients = [ '#aeefff', '#ffece3', '#ffd1e3', '#e9e6fd' ];
+const missionBackgroundImages = [ null, null, null, null, null ];
+
+/* ============================================================
+   GAME STATE + DOM REFS
+   ------------------------------------------------------------
+   PURPOSE: CENTRALIZE MUTABLE STATE AND CACHE FREQUENT DOM NODES
+   FOR PERFORMANCE AND CLARITY. NO GAME LOGIC HERE.
+   ============================================================ */
+let lang="en";
+let unlockedAnimalGroup = 0;
+let missionsAfterFinalUnlock = 0;
+let userInputBlocked = false;
+let difficultyLevel = 1, maxLevel = 4;
+let album = {};
+let collectibles = {};
+let missions = { explorer:{status:'incomplete', steps:0, goal:6} };
+let userStats = {streak:0, mistakes:0, accuracy:100};
+let correctCount=0, milestoneLevel=0, roundCount=0, quizMode=false, lastQuizIdx=-1;
+
+const allAnimalsById = {}; animalGroups.flat().forEach(a => allAnimalsById[a.id]=a);
+
+const promptDiv = document.getElementById('prompt');
+const quizPrompt = document.getElementById('quizPrompt');
+const animalRow = document.getElementById('animal-row');
+const feedback = document.getElementById('feedback');
+const factBlock = document.getElementById('fact-block');
+const stickerBoard = document.getElementById('sticker-board');
+const albumPics = document.getElementById('album-pics');
+const progressBar = document.getElementById('progress-bar');
+const progressInfo = document.getElementById('progress-info');
+const missionBlock = document.getElementById('mission-block');
+const trophyCabinet = document.getElementById('trophy-cabinet');
+const milestonePopup = document.getElementById('milestone-popup');
+const ding=document.getElementById('ding'), oops=document.getElementById('oops'), cheer=document.getElementById('cheer');
+
+/* ============================================================
+   MAP (SVG-WORLD-MAP.JS) — FULLSCREEN
+   ------------------------------------------------------------
+   PURPOSE: BOOTSTRAP AND CONTROL THE MAP. PROVIDES:
+   - NAME LOOKUPS, LIST NORMALIZATION, AND GROUP→COUNTRY MAPPING.
+   - HIGHLIGHT/FLASH REGIONS AND RESET MAP FOCUS.
+   - ASYNC MAP INITIALIZATION WITH OPTIONS FOR A KID-FRIENDLY LOOK.
+   ============================================================ */
+let worldMap = null; // API returned by svgWorldMap()
+const HILITE_COLOR = 'rgba(255, 234, 0, 0.7)';
+
+function continentName(code){
+  const c = CONTINENTS[code] || {en:code, nl:code};
+  return lang === 'nl' ? c.nl : c.en;
+}
+function naturalJoin(names){
+  if(names.length <= 1) return names[0] || '';
+  const conj = (lang==='nl') ? ' en ' : ' and ';
+  if(names.length === 2) return names[0] + conj + names[1];
+  const sep = ', ';
+  return names.slice(0,-1).join(sep) + sep + ((lang==='nl')?'en ':'and ') + names[names.length-1];
+}
+
+function normalizeGroupList(maybeList){
+  if (!maybeList) return [];
+  if (Array.isArray(maybeList)) return maybeList.slice();
+  return Object.keys(maybeList);
+}
+
+function countryCodesForContinent(code){
+  if (!worldMap) return [];
+  if (code === 'AU') return ['AU']; // treat Australia separately
+  if (worldMap.countryGroups && worldMap.countryGroups.region && worldMap.countryGroups.region[code]) {
+    return normalizeGroupList(worldMap.countryGroups.region[code]);
+  }
+  const out = [];
+  const data = worldMap.countryData || {};
+  for (const [iso, d] of Object.entries(data)) {
+    if (d && (d.region === code || d.continent === code)) out.push(iso);
+  }
+  return out;
+}
+
+function forEachProvince(iso, cb){
+  try {
+    if (worldMap?.countries?.[iso]?.provinces){
+      worldMap.countries[iso].provinces.forEach(p => {
+        const el = (p && p.ownerSVGElement) ? p : null;
+        if (el) cb(el);
+      });
+      return;
+    }
+    const svgDoc = document.getElementById('svg-world-map')?.contentDocument;
+    if (!svgDoc) return;
+    const group = svgDoc.getElementById(iso);
+    if (group) group.querySelectorAll('path').forEach(cb);
+  } catch(e){ /* no-op */ }
+}
+
+function resetMapFocus(){
+  const lab = document.getElementById('habitat-label'); if (lab) lab.textContent = '';
+}
+
+function flashContinents(codes, durationMs = 750){
+  if (!Array.isArray(codes)) codes = codes ? [codes] : [];
+  if (!codes.length || !worldMap) { 
+    const names = codes.map(continentName);
+    document.getElementById('habitat-label').textContent =
+      (lang==='nl') ? `Leefgebied: ${naturalJoin(names)}` : `Habitat: ${naturalJoin(names)}`;
+    return;
+  }
+  const touched = [];
+  codes.forEach(code => {
+    const isAustralia = (code === 'AU');
+    const countryCodes = isAustralia ? ['AU'] : countryCodesForContinent(code);
+    countryCodes.forEach(iso => {
+      forEachProvince(iso, path => {
+        const prevFill = path.getAttribute('fill') ?? null;
+        path.setAttribute('fill', HILITE_COLOR);
+        touched.push({path, prevFill});
+      });
+    });
+  });
+  const names = codes.map(continentName);
+  document.getElementById('habitat-label').textContent =
+    (lang==='nl') ? `Leefgebied: ${naturalJoin(names)}` : `Habitat: ${naturalJoin(names)}`;
+  setTimeout(() => {
+    touched.forEach(({path, prevFill}) => {
+      if (prevFill === null) path.removeAttribute('fill'); else path.setAttribute('fill', prevFill);
+    });
+  }, durationMs);
+}
+
+async function setupWorldMap(){
+  if (typeof svgWorldMap !== 'function') {
+    console.warn('svgWorldMap() not found. Game will continue without the map.');
+    return null;
+  }
+  try {
+    const m = await svgWorldMap({
+      libPath: "/lib/", 
+      bigMap: true,  
+	  backgroundImage: '/lib/demo/img/world-physical.png',	  // load nations only (faster)
+      showOcean: true,
+      showAntarctica: true,
+      showLabels: true,
+      showMicroLabels: false,
+      showMicroStates: true,
+      showInfoBox: false,
+      //oceanColor: getComputedStyle(document.documentElement).getPropertyValue('--ocean').trim() || '#D8EBFF',
+      worldColor: getComputedStyle(document.documentElement).getPropertyValue('--world').trim() || '#FFFFFF',
+	  oceanColor: 'none',   // optional: if you prefer the image’s ocean
+	  worldColor: 'none',
+      // gentler borders for a kid-safe look
+      countryStroke: { out: '#FFFFFF', over: '#FFFFFF', click: '#333333' },
+      //countryStrokeWidth: { out: '0.5', over: '1', click: '1' },
+      //provinceFill: { out: '#E2E8F0', over: '#FFFFFF', click: '#666666' },
+	  countryStrokeWidth: { out: '0.5', over: '1.2', click: '1' }, // stronger hover feedback without fills
+	  provinceFill: { out: 'none', over: 'none', click: '#666666' }, // show image on land; still color
+      provinceStroke: { out: '#FFFFFF', over: '#FFFFFF', click: '#666666' },
+      provinceStrokeWidth: { out: '0.1', over: '0.5', click: '0.5' },
+      groupCountries: true,
+      groupBy: ['region'],
+      mapOut: 'continentOut',
+      mapOver: 'continentOver',
+      mapClick: 'continentClick'
+    });
+    const obj = document.getElementById('svg-world-map');
+    if (obj) {
+      obj.style.position = 'fixed';
+      obj.style.inset = '0';
+      obj.style.width = '100vw';
+      obj.style.height = '100vh';
+      obj.style.zIndex = '0';
+    }
+    return m;
+  } catch (err) {
+    console.warn('Map failed to initialize. Game will continue.', err);
+    return null;
+  }
+}
+
+/* ============================================================
+   SPEECH & GENERAL UTILITIES
+   ------------------------------------------------------------
+   PURPOSE: SMALL, FOCUSED HELPERS FOR ACCESSIBILITY AND UI FX.
+   - INPUT GUARDING, CONFETTI, LANGUAGE RENDERING, SPEECH TTS.
+   - PROGRESS BAR & ALBUM RENDERING.
+   ============================================================ */
+function setCustomBackground(){ /* no-op when map is fullscreen */ }
+function setUserInputBlocked(block) {
+  userInputBlocked = block;
+  const row = document.getElementById('animal-row');
+  if (row) row.style.pointerEvents = block ? 'none' : 'auto';
+
+  const resetBtn = document.getElementById('reset-btn');
+  if (resetBtn) resetBtn.disabled = false;
+  document.querySelectorAll('.btnLang').forEach(btn => { btn.disabled = false; });
+}
+function confettiBurst() {
+  for (let i=0; i<20; i++) {
+    const star = document.createElement('div');
+    star.textContent = ["🦁","🐧","🐼","🐨","🐘","🦘","🐻‍❄️","🦒","🐅","🐫","🦅","🐬","🦊"][Math.floor(Math.random()*13)];
+    star.style.position='fixed'; star.style.left=(7+Math.random()*86)+'vw';
+    star.style.top='-2vh'; star.style.fontSize=(26+Math.random()*28)+'px';
+    star.style.transition='top 1.8s cubic-bezier(.29,1.1,.66,1.01)';
+    star.style.zIndex=999; star.style.pointerEvents='none';
+    document.body.appendChild(star);
+    setTimeout(()=>star.style.top=(55+Math.random()*18)+'vh',10);
+    setTimeout(()=>star.remove(),1800);
+  }
+}
+function showMilestonePopup(msg, cb){
+  try{ cheer.currentTime=0; cheer.play(); }catch(_){}
+  const el = document.getElementById('milestone-popup');
+  el.textContent = msg; el.style.display = 'block';
+  confettiBurst();
+  setTimeout(()=>{ el.style.display='none'; if (typeof cb === 'function') setTimeout(cb, 80); }, 1500);
+}
+function renderLang() {
+  const html = LANGUAGES.map(l=>`<button class="btnLang${lang===l.code?' selected':''}" onclick='setLang("${l.code}")'>${l.label}</button>`).join('');
+  document.getElementById('langpicker').innerHTML = "Language / Taal: " + html;
+}
+function setLang(l){ lang=l; renderLang(); drawAlbum(); if(quizMode) showQuiz(); else newChallenge(); }
+function speakPhrase(text, cb){
+  if ('speechSynthesis' in window) {
+    const msg = new SpeechSynthesisUtterance(text);
+    msg.lang = (lang === "nl" ? "nl-NL" : "en-US");
+    msg.onend = typeof cb === 'function' ? cb : null;
+    window.speechSynthesis.speak(msg);
+  } else { if (typeof cb==='function') setTimeout(cb, 600); }
+}
+function updateProgressBar(pct){
+  progressBar.style.width = `${pct}%`;
+  const m = missions['explorer'];
+  if (!m) { progressInfo.textContent = ''; return; }
+  const remaining = Math.max(0, m.goal - m.steps);
+  progressInfo.textContent = (lang==='nl')
+    ? (remaining === 0 ? 'Klaar!' : `Nog ${remaining} te gaan`)
+    : (remaining === 0 ? 'Done!' : `${remaining} to go`);
+}
+function rewardSticker(){
+  const s = document.createElement('span');
+  s.textContent = "⭐";
+  s.style.margin = '0 2px';
+  document.getElementById('sticker-board').appendChild(s);
+}
+function drawAlbum(){
+  const html = Object.keys(album).map(id => `
+    <span class="album-pic">
+      <img src="${allAnimalsById[id].mini}" alt="${allAnimalsById[id].name[lang]}">
+      <div class="album-label">${allAnimalsById[id].name[lang]}</div>
+    </span>
+  `).join('') || `<span style="color:#2b663b88;">${lang==='nl'?'Nog geen dieren verzameld':'No animals collected yet'}</span>`;
+  document.getElementById('album-pics').innerHTML = html;
+}
+function unlockCollectible(type, id){
+  if (!collectibles[type]) collectibles[type] = {};
+  if (type === 'badge') collectibles[type][id] = (collectibles[type][id] || 0) + 1;
+  else collectibles[type][id] = true;
+  showTrophyCabinet(); saveGameState();
+}
+function showTrophyCabinet(){
+  let html = '';
+  Object.keys(collectibles).forEach(type => {
+    Object.keys(collectibles[type]).forEach(id => {
+      const count = collectibles[type][id];
+      html += `<span>${type}: ${id} 🏆 ${type==='badge' ? `<strong>x${count}</strong>`:''}</span>&nbsp;`;
+    });
+  });
+  document.getElementById('trophy-cabinet').innerHTML = html || "(No trophies yet!)";
+}
+function startMission(id){
+  if(!missions[id]) missions[id] = {status:'incomplete', steps:0, goal:6};
+  const m = missions[id];
+  missionBlock.textContent = m.status==='incomplete'
+    ? (lang==='nl' ? `Missie: Verzamel ${m.goal} dieren  (${m.steps}/${m.goal})`
+                    : `Mission: Collect ${m.goal} animals  (${m.steps}/${m.goal})`)
+    : (lang==='nl' ? 'Missie voltooid!' : 'Mission complete!');
+}
+function completeMission(id, afterComplete){
+  missions[id].status='complete';
+  unlockCollectible('badge', id);
+  missionBlock.textContent = (lang==='nl' ? 'Missie voltooid!' : 'Mission complete!');
+  const say = (lang==='nl' ? 'Missie voltooid!' : 'Mission complete!');
+  speakPhrase(say, function(){
+    showMilestonePopup(lang==='nl'?'Top!':'Nice!', function(){
+      if (unlockedAnimalGroup < animalGroups.length-1) {
+        unlockedAnimalGroup++;
+        speakPhrase(lang==='nl'?'Je hebt een nieuwe groep dieren vrijgespeeld!':"You've unlocked a new group of animals!", function(){
+          saveGameState(); proceed();
+        });
+      } else {
+        missionsAfterFinalUnlock += 1; saveGameState(); proceed();
+      }
+      function proceed(){
+        const allComplete = Object.values(missions).every(m => m.status==='complete');
+        const groupsUnlocked = (unlockedAnimalGroup >= animalGroups.length-1);
+        if (groupsUnlocked && allComplete && missionsAfterFinalUnlock >= 1) { setUserInputBlocked(false); showEndBoard(); return; }
+        if (allComplete) { const ids = Object.keys(missions); missions[ids[0]].status='incomplete'; missions[ids[0]].steps=0; }
+        startNextIncompleteMission(); if (typeof afterComplete==='function') afterComplete();
+      }
+    });
+  });
+}
+function startNextIncompleteMission(){
+  const ordered = Object.keys(missions);
+  for (let i=0;i<ordered.length;i++){
+    const id = ordered[i];
+    if (missions[id].status!=='complete'){
+      missions[id].steps=0; missions[id].status='incomplete';
+      startMission(id); updateProgressBar(0);
+      return;
+    }
+  }
+}
+function updateMissionProgress(id){
+  if (!missions[id] || missions[id].status==='complete') return;
+  missions[id].steps++;
+  const m = missions[id];
+  if (m.steps >= m.goal) { updateProgressBar(100); setTimeout(()=>completeMission(id), 800); }
+  else { const pct = Math.round(100 * (m.steps/m.goal)); updateProgressBar(pct); saveGameState(); startMission(id); }
+}
+function getUnlockedAnimals(){ return animalGroups.slice(0, unlockedAnimalGroup+1).flat(); }
+function adjustDifficulty(stats){
+  if (stats.streak>=5){ difficultyLevel = Math.min(difficultyLevel+1, maxLevel); stats.streak=0; }
+  else if (stats.mistakes>=3){ difficultyLevel = Math.max(difficultyLevel-1, 1); stats.mistakes=0; }
+}
+function getNextChallengeAnimalIds() {
+  const unlocked = getUnlockedAnimals();
+  const ids = unlocked.map(a=>a.id);
+  const weights = {}; ids.forEach(id=>weights[id]=1);
+  const newestGroup = animalGroups[Math.min(unlockedAnimalGroup, animalGroups.length-1)] || [];
+  newestGroup.forEach(a => weights[a.id] = 4);
+  let pool=[]; ids.forEach(id=>{ for(let w=0; w<(weights[id]||1); w++) pool.push(id); });
+  for (let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+  const unique = [...new Set(pool)];
+  const maxChoices = Math.min(5 + difficultyLevel, unique.length);
+  return unique.slice(0, maxChoices);
+}
+function bounce(node){ try{ node.style.transform='scale(0.9)'; setTimeout(()=>node.style.transform='',200);}catch(_){} }
+function waitForExampleVideoOrAdvance(cb){ if (typeof cb === 'function') setTimeout(cb, 300); }
+function showFactWithAnimation(name, fact){ factBlock.textContent = fact; }
+
+/* ============================================================
+   MAIN GAME LOOP (ROUND FLOW)
+   ------------------------------------------------------------
+   PURPOSE: DRIVE EACH ROUND:
+   - SELECT ANSWER, RENDER CHOICES, HANDLE CORRECT/WRONG,
+     UPDATE MISSION/DIFFICULTY, ANNOUNCE FACTS, AND ADVANCE.
+   ============================================================ */
+function speakAnimalHabitat(animal){
+  const codes = animal.continents || [];
+  if(!codes.length) return;
+  const place = naturalJoin(codes.map(continentName));
+  const line = (lang==='nl') ? `${animal.name.nl} leeft in ${place}.` : `${animal.name.en} lives in ${place}.`;
+  speakPhrase(line);
+}
+function newChallenge() {
+  setUserInputBlocked(true);
+  roundCount++;
+  quizPrompt.textContent = '';
+  animalRow.innerHTML = '';
+  document.getElementById('visual-cue').innerHTML = '';
+  promptDiv.textContent = '';
+  resetMapFocus();
+
+  startMission("explorer");
+  const m = missions['explorer'];
+  const pct = m ? Math.min(100, Math.round(100 * (m.steps / m.goal))) : 0;
+  updateProgressBar(pct);
+
+  if (roundCount % 7 === 0) { showQuiz(); return; }
+
+  quizMode = false;
+  feedback.textContent = '';
+  factBlock.textContent = '';
+
+  const availableIds = getNextChallengeAnimalIds();
+  const idx = Math.floor(Math.random() * availableIds.length);
+  const answerAnimalId = availableIds[idx];
+  const answerAnimal = allAnimalsById[answerAnimalId];
+
+  document.getElementById('visual-cue').innerHTML = `<span class="label">${answerAnimal.name[lang]}</span>`;
+  const promptText = (lang === "nl") ? `Klik op de ${answerAnimal.name[lang]}` : `Click the ${answerAnimal.name[lang]}`;
+  speakPhrase(promptText);
+  setTimeout(() => setUserInputBlocked(false), 800);
+
+  animalRow.innerHTML = '';
+  availableIds.forEach((aid) => {
+    const animal = allAnimalsById[aid];
+    const d = document.createElement('span');
+    d.className = "animal"; d.tabIndex = 0;
+    d.innerHTML = `<img src="${animal.photo}" alt="${animal.name[lang]}"><br><div class="label">${animal.name[lang]}</div>`;
+    d.onclick = () => {
+      if (userInputBlocked) return;
+      setUserInputBlocked(true);
+      if (aid === answerAnimalId) {
+        correctCount++; userStats.streak++; userStats.mistakes = 0;
+        missions['explorer'].steps++;
+        const missionJustCompleted = missions['explorer'].steps >= missions['explorer'].goal;
+        const milestoneNow = (correctCount % 10 === 0 && correctCount > 0);
+        feedback.textContent = niceWords[lang][Math.floor(Math.random() * niceWords[lang].length)];
+        try { ding.currentTime = 0; ding.play(); } catch(_) {}
+        showFactWithAnimation(animal.name[lang], animal.fact[lang]);
+        if (correctCount % 5 === 0) rewardSticker();
+        if (!album[aid]) { album[aid] = { n: animal.name, en: animal.name.en, nl: animal.name.nl }; drawAlbum(); }
+        adjustDifficulty(userStats); saveGameState();
+        const m = missions['explorer']; const pct = m ? Math.min(100, Math.round(100 * (m.steps / m.goal))) : 0;
+        updateProgressBar(pct); startMission("explorer");
+        flashContinents(animal.continents);
+        speakAnimalHabitat(animal);
+        speakPhrase(animal.fact[lang], function () {
+          if (missionJustCompleted) {
+            completeMission("explorer", function () { setUserInputBlocked(false); waitForExampleVideoOrAdvance(newChallenge); });
+          } else if (milestoneNow) {
+            let milestoneSpeechDone = false; let milestonePopupDone = false;
+            function proceedIfReady() {
+              if (milestoneSpeechDone && milestonePopupDone) {
+                setUserInputBlocked(false); waitForExampleVideoOrAdvance(newChallenge);
+              }
+            }
+            speakPhrase(lang === "nl" ? "Je hebt een mijlpaal bereikt!" : "You've reached a milestone!", function () {
+              milestoneSpeechDone = true; proceedIfReady();
+            });
+            showMilestonePopup("Milestone!", function () {
+              milestonePopupDone = true; proceedIfReady();
+            });
+          } else {
+            setUserInputBlocked(false);
+            waitForExampleVideoOrAdvance(newChallenge);
+          }
+        });
+      } else {
+        userStats.mistakes++; userStats.streak = 0;
+        const tryMsg = (lang === "nl" ? "Probeer het opnieuw!" : "Try again!");
+        feedback.textContent = tryMsg;
+        speakPhrase(tryMsg, function () { setUserInputBlocked(false); });
+        try { oops.currentTime = 0; oops.play(); } catch(_) {}
+        bounce(d); adjustDifficulty(userStats); saveGameState();
+      }
+    };
+    d.onkeydown = (e) => { if (e.key === ' ' || e.key === 'Enter') d.click(); };
+    animalRow.appendChild(d);
+  });
+}
+
+/* ============================================================
+   QUIZ MODE
+   ------------------------------------------------------------
+   PURPOSE: PERIODIC QUIZ ROUND TO REINFORCE LEARNING.
+   - CHOOSES A RANDOM ELIGIBLE QUESTION TIED TO UNLOCKED ANIMALS.
+   - USES SAME CARD UI, WITH TTS AND FEEDBACK.
+   ============================================================ */
+function showQuiz(){
+  resetMapFocus();
+  quizMode = true;
+  feedback.textContent=''; factBlock.textContent='';
+  const unlocked = getUnlockedAnimals();
+  const unlockedIds = unlocked.map(a=>a.id);
+  const available = animalQuestions.filter(q => unlockedIds.includes(q.answerId));
+  if (!available.length){ newChallenge(); return; }
+  let idx = Math.floor(Math.random()*available.length);
+  while (idx===lastQuizIdx && available.length>1) idx = Math.floor(Math.random()*available.length);
+  lastQuizIdx = idx;
+  const q = available[idx];
+  const text = (lang==='nl'?'Quiz: ':'Quiz: ') + q.prompt[lang];
+  quizPrompt.innerHTML = `<span style="font-size:1.2em;">${text}</span>`;
+  setUserInputBlocked(true);
+  speakPhrase(q.prompt[lang], ()=>setUserInputBlocked(false));
+  const shuffled = unlockedIds.slice().sort(()=>Math.random()-0.5);
+  animalRow.innerHTML = shuffled.map(id=>{
+    const a = allAnimalsById[id];
+    return `<span class="animal" tabindex="0" data-id="${id}">
+      <img src="${a.photo}" alt="${a.name[lang]}"><br><div class="label">${a.name[lang]}</div>
+    </span>`;
+  }).join('');
+  Array.from(animalRow.getElementsByClassName('animal')).forEach(node=>{
+    node.onclick = ()=>{
+      if (userInputBlocked) return;
+      setUserInputBlocked(true);
+      if (node.getAttribute('data-id') === q.answerId){
+        const animal = allAnimalsById[q.answerId];
+        feedback.textContent = (lang==='nl'?'Geweldig!':'Great job!') + ' ⭐';
+        confettiBurst(); try{ ding.currentTime=0; ding.play(); }catch(_){}
+        const confirm = (lang==='nl') ? `Dat klopt, ${animal.name.nl}!` : `That's right, ${animal.name.en}!`;
+        speakPhrase(confirm, () => {
+          flashContinents(animal.continents);
+          speakPhrase(animal.fact[lang], () => {
+            setTimeout(() => { quizMode = false; newChallenge(); }, 500);
+          });
+        });
+      } else {
+        feedback.textContent = (lang==='nl'?'Probeer nog een keer!':'Nope, try again!');
+        try{ oops.currentTime=0; oops.play(); }catch(_){}
+        setUserInputBlocked(false);
+      }
+    };
+    node.onkeydown = (e)=>{ if (e.key===' '||e.key==='Enter') node.click(); };
+  });
+}
+
+/* ============================================================
+   END GAME • SAVE/LOAD • BOOTSTRAP
+   ------------------------------------------------------------
+   PURPOSE: PERSIST PROGRESS, SHOW A FINISH OVERLAY, AND
+   INITIALIZE THE APP ONCE SCRIPTS AND DATA ARE READY.
+   ============================================================ */
+function getTrophiesCount(){
+  let total=0;
+  if (collectibles && typeof collectibles==='object'){
+    Object.keys(collectibles).forEach(type=>{
+      const bag = collectibles[type]||{};
+      Object.keys(bag).forEach(id=>{ total += (type==='badge' && typeof bag[id]==='number') ? bag[id] : 1; });
+    });
+  }
+  return total;
+}
+function getPrizesCount(){ return document.getElementById('sticker-board')?.children.length || 0; }
+function showEndBoard(){
+  if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+  const trophies = getTrophiesCount(); const prizes = getPrizesCount();
+  let overlay = document.getElementById('end-board-overlay');
+  overlay.style.display='flex'; overlay.style.position='fixed'; overlay.style.inset='0';
+  overlay.style.background='rgba(0,0,0,.7)'; overlay.style.zIndex='9999';
+  overlay.style.alignItems='center'; overlay.style.justifyContent='center'; overlay.innerHTML='';
+  const card = document.createElement('div');
+  card.style.background='white'; card.style.borderRadius='16px'; card.style.padding='24px';
+  card.style.maxWidth='520px'; card.style.width='90%'; card.style.boxShadow='0 10px 30px rgba(0,0,0,.25)';
+  card.style.textAlign='center';
+  const title = document.createElement('h2'); title.textContent = (lang==='nl'?'Einde van het spel!':'End of the Game!');
+  const msg = document.createElement('p');
+  msg.textContent = (lang==='nl'
+    ? 'Fantastisch! Je hebt alle dierengroepen vrijgespeeld en de laatste missie voltooid.'
+    : 'Fantastic! You’ve unlocked all animal groups and completed the final mission.');
+  const stats = document.createElement('p');
+  stats.style.opacity='.9'; stats.style.margin='12px 0 20px';
+  stats.textContent = (lang==='nl' ? `Trofeeën: ${trophies} · Stickers: ${prizes}` : `Trophies: ${trophies} · Stickers: ${prizes}`);
+  const row = document.createElement('div');
+  row.style.display='flex'; row.style.gap='12px'; row.style.justifyContent='center'; row.style.marginTop='10px';
+  const newBtn = document.createElement('button');
+  newBtn.textContent = (lang==='nl'?'Nieuw spel':'New Game');
+  Object.assign(newBtn.style,{padding:'10px 16px',borderRadius:'10px',border:'none',cursor:'pointer',fontWeight:'600',boxShadow:'0 2px 8px rgba(0,0,0,.15)'});
+  newBtn.addEventListener('click', ()=>{ overlay.style.display='none'; resetGameState(); }, {once:true});
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = (lang==='nl'?'Sluiten':'Close');
+  Object.assign(closeBtn.style,{padding:'10px 16px',borderRadius:'10px',border:'1px solid #ddd',background:'#f7f7f7',cursor:'pointer'});
+  closeBtn.addEventListener('click', ()=>{ overlay.style.display='none'; }, {once:true});
+  row.appendChild(newBtn); row.appendChild(closeBtn);
+  card.appendChild(title); card.appendChild(msg); card.appendChild(stats); card.appendChild(row);
+  overlay.appendChild(card);
+}
+function saveGameState(){
+  const s = { correctCount, milestoneLevel, album, difficultyLevel, missions, collectibles,
+              unlockedAnimalGroup, missionsAfterFinalUnlock, lang };
+  localStorage.setItem('animalExplorerGameState', JSON.stringify(s));
+}
+function loadGameState(){
+  const raw = localStorage.getItem('animalExplorerGameState');
+  if (!raw) return;
+  try{
+    const g = JSON.parse(raw);
+    correctCount = g.correctCount || 0;
+    milestoneLevel = g.milestoneLevel || 0;
+    album = g.album || {};
+    difficultyLevel = g.difficultyLevel || 1;
+    missions = g.missions || missions;
+    collectibles = g.collectibles || collectibles;
+    unlockedAnimalGroup = (typeof g.unlockedAnimalGroup==='number' ? g.unlockedAnimalGroup : 0);
+    missionsAfterFinalUnlock = (typeof g.missionsAfterFinalUnlock==='number' ? g.missionsAfterFinalUnlock : 0);
+    lang = g.lang || lang;
+  } catch(e){}
+}
+function resetGameState(){
+  window.speechSynthesis && window.speechSynthesis.cancel();
+  [ding,oops,cheer].forEach(a=>{ try{ a.pause(); a.currentTime=0; }catch(_){}});
+
+  localStorage.removeItem('animalExplorerGameState');
+  correctCount=0; milestoneLevel=0; album={}; difficultyLevel=1;
+  missions={ explorer:{status:'incomplete',steps:0,goal:6} };
+  collectibles={}; userStats={streak:0, mistakes:0, accuracy:100};
+  document.getElementById('sticker-board').innerHTML='';
+  unlockedAnimalGroup=0; missionsAfterFinalUnlock=0;
+
+  drawAlbum(); showTrophyCabinet(); startMission('explorer'); updateProgressBar(0);
+  newChallenge();
+}
+document.getElementById('reset-btn').onclick = resetGameState;
+
+/* ============================================================
+   BOOTSTRAP (ASYNC INIT)
+   ------------------------------------------------------------
+   PURPOSE: INITIALIZE MAP, RESTORE STATE, RENDER UI, AND START
+   THE FIRST ROUND. RUNS ONCE ON PAGE LOAD.
+   ============================================================ */
+(async function init(){
+  worldMap = await setupWorldMap();
+  loadGameState();
+  renderLang();
+  drawAlbum();
+  showTrophyCabinet();
+  startMission('explorer');
+  updateProgressBar(0);
+  newChallenge();
+})();
+  </script>
+</body>
+</html>

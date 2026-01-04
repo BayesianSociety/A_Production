@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Replika obrazu – przyciski</title>
+  <style>
+    :root{
+      --bg: #f4f6f8;
+      --tab: #cfe8ee;
+      --tab-border: #9bd0db;
+      --line: #80d1de;
+      --btn: #1dade0;
+      --btn-dark: #0b75a4;
+      --btn-shadow: #0a4e70;
+      --btn-text: #ffffff;
+      --accent: #23b1e6;
+      --radius: 22px;
+    }
+
+    html, body{height:100%;}
+    body{
+      margin:0; background:var(--bg); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans", Ubuntu, Cantarell, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji";
+      display:grid; place-items:center; color:#0d1b2a;
+    }
+
+    .card{ width:min(920px, 92vw); background:transparent;}
+
+    /* Tabs area */
+    .tabs-wrap{ position:relative; height:96px; display:flex; align-items:flex-end; justify-content:center;}
+    .tabs-line{ position:absolute; left:6%; right:6%; height:8px; background:linear-gradient(90deg, transparent 0%, var(--line) 10%, var(--line) 90%, transparent 100%); border-radius:6px; top:56px;}
+    .tabs{ position:relative; display:flex; gap:4px; z-index:2;}
+    .tab{ user-select:none; cursor:pointer; padding:14px 22px; background:var(--tab); border:2px solid var(--tab-border); border-bottom:none; border-top-left-radius:18px; border-top-right-radius:18px; font-weight:600; box-shadow:0 2px 0 rgba(0,0,0,0.03) inset; transition:filter .15s ease, transform .15s ease;}
+    .tab:not(.active):hover{ filter:brightness(1.03); transform:translateY(-1px); }
+    .tab.active{ background:#e5f5f9; }
+
+    /* Grid with buttons */
+    .grid{ margin:24px auto 8px; width:min(720px, 92vw); display:grid; grid-template-columns:repeat(2, 1fr); gap:48px 64px; justify-items:center;}
+
+    .btn-tile{
+      --shadow-offset: 10px;
+      width: 270px; max-width: 86vw; height: 210px; border-radius: 28px;
+      background: linear-gradient(160deg, var(--btn) 0%, #149fd0 60%, #1197c7 100%);
+      color: var(--btn-text);
+      display:grid; place-items:center; font-size: 64px; font-weight:800; letter-spacing: .5px;
+      position:relative; cursor:pointer; border:none; outline:none;
+      box-shadow: 0 var(--shadow-offset) 0 0 var(--btn-dark), 0 calc(var(--shadow-offset) + 10px) 24px rgba(0,0,0,.18);
+      transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+    }
+    .btn-tile:focus-visible{ outline: 3px solid #fff; outline-offset: 2px; }
+    .btn-tile:hover{ filter: brightness(1.03); }
+    .btn-tile:active{
+      transform: translateY(6px);
+      box-shadow: 0 4px 0 0 var(--btn-dark), 0 12px 18px rgba(0,0,0,.16);
+    }
+
+    /* Make the fraction look stacked, like in the image */
+    .frac{ display:inline-grid; grid-template-rows:auto 6px auto; align-items:center; row-gap:12px; }
+    .frac .bar{ height:6px; width:100%; background:var(--btn-text); border-radius: 3px; display:block; }
+    .frac .top, .frac .bottom{ display:block; line-height:1; }
+
+    /* Slightly smaller type on smaller screens */
+    @media (max-width: 820px){
+      .btn-tile{ height: 160px; font-size: 48px; }
+      .grid{ gap:32px; }
+    }
+
+    @media (max-width: 520px){
+      .btn-tile{ width: 220px; height: 140px; font-size: 40px; }
+      .tabs-line{ left:3%; right:3%; }
+    }
+
+    .selection{ text-align:center; font-weight:700; margin-top: 18px; color:#2a4a5e; min-height:1.4em; }
+  </style>
+</head>
+<body>
+  <main class="card" role="main">
+    <div class="tabs-wrap" aria-label="Zakładki">
+      <div class="tabs-line" aria-hidden="true"></div>
+      <div class="tabs">
+        <div class="tab active" role="button" tabindex="0" aria-pressed="true">Część 1</div>
+        <div class="tab" role="button" tabindex="0" aria-pressed="false">Część 2</div>
+      </div>
+    </div>
+
+    <section class="grid" aria-label="Wybór wartości">
+      <button class="btn-tile" data-value="1" aria-label="Wybierz 1">1</button>
+
+      <button class="btn-tile" data-value="1/2" aria-label="Wybierz jedną drugą">
+        <span class="frac" aria-hidden="true">
+          <span class="top">1</span>
+          <span class="bar"></span>
+          <span class="bottom">2</span>
+        </span>
+      </button>
+
+      <button class="btn-tile" data-value="0,1" aria-label="Wybierz zero przecinek jeden">0,1</button>
+
+      <button class="btn-tile" data-value="-1" aria-label="Wybierz minus jeden">-1</button>
+    </section>
+
+    <div class="selection" id="selection" aria-live="polite"></div>
+  </main>
+
+  <script>
+    // Basic interaction: clicking a tab toggles active state (purely visual here)
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+      });
+      tab.addEventListener('keydown', (e) => {
+        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); tab.click(); }
+      });
+    });
+
+    // Button click handler
+    const out = document.getElementById('selection');
+    function handlePick(value){
+      out.textContent = `Wybrano: ${value}`;
+      // If you want to do more with the value, call your logic here
+      // e.g., send to parent app or grade an answer.
+      console.log('Picked:', value);
+    }
+
+    document.querySelectorAll('.btn-tile').forEach(btn => {
+      btn.addEventListener('click', () => handlePick(btn.dataset.value));
+      btn.addEventListener('keydown', (e) => {
+        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); btn.click(); }
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+[
+  { 
+    "prompt": { 
+      "en": "Which animal has cube-shaped poop?", 
+      "nl": "Welk dier heeft kubusvormige uitwerpselen?" 
+    }, 
+    "answerId": "wombat" 
+  },
+  { 
+    "prompt": { 
+      "en": "Which animal communicates using clicks and whistles?", 
+      "nl": "Welk dier communiceert met klik- en fluitgeluiden?" 
+    }, 
+    "answerId": "dolphin" 
+  }
+]

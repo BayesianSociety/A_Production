@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>WordChomp — Pac-Man Letters (Local)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    /* Layout & retro look approximating the reference */
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #333;
+      color: #0f0;
+      font-family: "Courier New", Courier, monospace;
+      user-select: none;
+    }
+    #game { text-align: center; }
+    canvas {
+      width: 448px; height: 496px;
+      border: 2px solid #000;
+      background: #000;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      display: block;
+      margin: 8px auto;
+    }
+    #hud {
+      display: flex;
+      gap: 24px;
+      justify-content: center;
+      align-items: center;
+      font-size: 18px;
+      line-height: 1.2;
+    }
+    #wordBlanks { letter-spacing: 6px; }
+    #msg { margin-top: 6px; min-height: 20px; color: #9f9; }
+    .btn { color:#0f0; background:#111; border:1px solid #0f0; padding:4px 8px; cursor:pointer; }
+  </style>
+</head>
+<body>
+<div id="game">
+  <div id="hud">
+    <div id="score">Score: 0</div>
+    <div id="lives">Lives: 3</div>
+    <div id="time">Time: 00:00</div>
+    <div id="next" title="Next required letter">Next: ?</div>
+  </div>
+  <canvas id="c" width="448" height="496"></canvas>
+  <div id="wordBlanks">_ _ _</div>
+  <div id="msg">Arrow keys to move • P pause • H hint</div>
+  <div>
+    <button class="btn" id="toggleHint">Toggle Hint</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+/*
+ASSUMPTIONS (stated explicitly per instructions):
+- The maze should visually match the supplied reference: black background, blue walls, white dots, green HUD, 28x31 grid, tileSize=16px, canvas 448x496.
+- Letters are always edible, never harm the player. Challenge is time pressure only. Losing a life occurs on timer expiry.
+- Words are short UPPERCASE (e.g., DOG, CAT, SCHOOL). By default the actual word is hidden; the HUD can reveal the next required letter if hint is enabled.
+- Game is single-file and offline (no network, no external libraries). Fonts may render slightly differently across systems.
+*/
+
+// -------- Config --------
+const CONFIG = {
+  words: ["DOG","CAT","SCHOOL","CAR","TREE","HOUSE"],
+  roundTimeMs: 90_000,
+  letterSpeedTilesPerSec: 6,
+  playerSpeedTilesPerSec: 9,
+  lives: 3,
+  penalties: { wrongLetter: 50 },
+  rewards: { perCorrectLetter: 100, wordBonus: 500 },
+  showHint: false,
+  showWord: false,
+  audio: { enabled: false },
+  tileSize: 16,
+  cols: 28,
+  rows: 31,
+  // Colors approximating the reference
+  colors: { wall:"#00f", dot:"#fff", pac:"#ff0", text:"#0f0", bg:"#000", stroke:"#111" },
+};
+
+// -------- Map (taken from reference file: 1=wall, 0=empty, 2=dot visual) --------
+const MAP = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,1,0,0,1,2,1,0,0,0,1,2,1,1,2,1,0,0,0,1,2,1,0,0,1,2,1],
+  [1,2,1,0,0,1,2,1,0,0,0,1,2,1,1,2,1,0,0,0,1,2,1,0,0,1,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],
+  [1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],
+  [0,0,0,0,0,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,1,1,1,0,0,1,1,1,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,1,1,1,0,0,1,1,1,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,0,0,0,0,0],
+  [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,2,2,1,1,2,2,2,2,2,2,2,0,0,2,2,2,2,2,2,2,1,1,2,2,2,1],
+  [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
+  [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
+  [1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+// -------- Canvas & HUD --------
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const livesEl = document.getElementById('lives');
+const timeEl = document.getElementById('time');
+const blanksEl = document.getElementById('wordBlanks');
+const nextEl = document.getElementById('next');
+const msgEl = document.getElementById('msg');
+document.getElementById('toggleHint').onclick = () => {
+  CONFIG.showHint = !CONFIG.showHint;
+  updateHUD();
+};
+
+// -------- Utilities --------
+const rnd = (() => { // simple LCG for deterministic letter AI per round
+  let s = 1234567;
+  return {
+    seed(v) { s = (v>>>0) || 1; },
+    next() { s = (1103515245 * s + 12345) >>> 0; return s; },
+    float() { return (rnd.next() % 10000) / 10000; },
+    pick(arr) { return arr[(rnd.next() % arr.length)]; }
+  };
+})();
+
+function clamp(v,lo,hi) { return Math.max(lo, Math.min(hi, v)); }
+function toTile(p) { return Math.floor(p); }
+function isPassable(cx, cy) {
+  if (cx < 0 || cx >= CONFIG.cols || cy < 0 || cy >= CONFIG.rows) return false;
+  const t = MAP[cy][cx];
+  return t === 0 || t === 2;
+}
+function tileCenter(x) { return Math.abs(x - Math.round(x)) < 0.01; }
+function dist2(ax,ay,bx,by) { const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy; }
+
+// -------- Maze Rendering --------
+function drawMaze() {
+  const ts = CONFIG.tileSize;
+  ctx.fillStyle = CONFIG.colors.bg;
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // Dots (visual only)
+  ctx.fillStyle = CONFIG.colors.dot;
+  for (let y=0; y<CONFIG.rows; y++) {
+    for (let x=0; x<CONFIG.cols; x++) {
+      if (MAP[y][x] === 2) {
+        ctx.beginPath();
+        ctx.arc(x*ts+ts/2, y*ts+ts/2, 2, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Walls
+  ctx.fillStyle = CONFIG.colors.wall;
+  for (let y=0; y<CONFIG.rows; y++) {
+    for (let x=0; x<CONFIG.cols; x++) {
+      if (MAP[y][x] === 1) {
+        ctx.fillRect(x*ts, y*ts, ts, ts);
+      }
+    }
+  }
+}
+
+// -------- Entities --------
+const gameState = {
+  running: true,
+  paused: false,
+  lives: CONFIG.lives,
+  score: 0,
+  roundWord: "DOG",
+  progressIndex: 0,
+  timeLeftMs: CONFIG.roundTimeMs,
+  letters: [],
+};
+
+const player = {
+  x: 14.5, y: 23.5, dx: 0, dy: 0, wantDx: 1, wantDy: 0,
+  speed: CONFIG.playerSpeedTilesPerSec, anim: 0, lastFacing: 0
+};
+
+function spawnRound(word) {
+  gameState.roundWord = word;
+  gameState.progressIndex = 0;
+  gameState.timeLeftMs = CONFIG.roundTimeMs;
+  gameState.letters.length = 0;
+
+  // seed RNG from word for reproducibility
+  let seed = 0;
+  for (let i=0;i<word.length;i++) seed = (seed*131 + word.charCodeAt(i))>>>0;
+  rnd.seed(seed);
+
+  // find passable tiles to spawn letters away from player
+  const candidates = [];
+  for (let y=0;y<CONFIG.rows;y++) for (let x=0;x<CONFIG.cols;x++) {
+    if (isPassable(x,y)) {
+      const d = dist2(x+0.5,y+0.5, player.x, player.y);
+      if (d > 9) candidates.push([x+0.5,y+0.5]);
+    }
+  }
+  for (let i=0;i<word.length;i++) {
+    const p = candidates.splice(rnd.next()%candidates.length,1)[0] || [14.5,11.5];
+    gameState.letters.push({
+      glyph: word[i], order: i,
+      x: p[0], y: p[1],
+      dx: 0, dy: 0,
+      speed: CONFIG.letterSpeedTilesPerSec,
+      state: "moving",
+    });
+  }
+  // give them initial directions
+  for (const L of gameState.letters) chooseLetterDir(L, true);
+  updateHUD();
+}
+
+function updateHUD() {
+  scoreEl.textContent = `Score: ${gameState.score}`;
+  livesEl.textContent = `Lives: ${gameState.lives}`;
+  const t = Math.max(0, Math.floor(gameState.timeLeftMs/1000));
+  const mm = String(Math.floor(t/60)).padStart(2,'0');
+  const ss = String(t%60).padStart(2,'0');
+  timeEl.textContent = `Time: ${mm}:${ss}`;
+  const blanks = gameState.roundWord.split('').map((ch,i)=> i < gameState.progressIndex ? ch : '_').join(' ');
+  blanksEl.textContent = blanks;
+  nextEl.textContent = `Next: ${CONFIG.showHint ? (gameState.roundWord[gameState.progressIndex] || '?') : '?'}`;
+}
+
+// -------- Input --------
+window.addEventListener('keydown', (e)=>{
+  if (e.key === 'ArrowUp') { player.wantDx=0; player.wantDy=-1; }
+  else if (e.key === 'ArrowDown') { player.wantDx=0; player.wantDy=1; }
+  else if (e.key === 'ArrowLeft') { player.wantDx=-1; player.wantDy=0; }
+  else if (e.key === 'ArrowRight') { player.wantDx=1; player.wantDy=0; }
+  else if (e.key.toLowerCase() === 'p') { gameState.paused = !gameState.paused; }
+  else if (e.key.toLowerCase() === 'h') { CONFIG.showHint = !CONFIG.showHint; updateHUD(); }
+});
+
+// -------- Movement & Collisions --------
+function atCenter(x,y) { return tileCenter(x) && tileCenter(y); }
+function canGo(x,y,dx,dy) {
+  const nx = Math.round(x) + dx;
+  const ny = Math.round(y) + dy;
+  return isPassable(nx, ny);
+}
+
+function wrapX(x) {
+  if (x < -0.5) return CONFIG.cols-0.5;
+  if (x > CONFIG.cols-0.5) return 0.5;
+  return x;
+}
+
+function stepPlayer(dt) {
+  // switch to desired direction at tile centers when possible
+  if (atCenter(player.x, player.y) && canGo(player.x, player.y, player.wantDx, player.wantDy)) {
+    player.dx = player.wantDx; player.dy = player.wantDy;
+  }
+  if (!canGo(player.x, player.y, player.dx, player.dy) && atCenter(player.x, player.y)) {
+    player.dx = player.dy = 0; // bump into wall
+  }
+  const spd = player.speed * dt;
+  player.x += player.dx * spd;
+  player.y += player.dy * spd;
+  player.x = wrapX(player.x);
+  player.anim += dt * 10;
+  if (player.dx!==0 || player.dy!==0) player.lastFacing = Math.atan2(player.dy, player.dx);
+}
+
+function chooseLetterDir(L, force=false) {
+  if (!force && !atCenter(L.x, L.y)) return;
+  const cx = Math.round(L.x), cy = Math.round(L.y);
+  const dirs = [];
+  const options = [
+    [1,0],
+    [-1,0],
+    [0,1],
+    [0,-1],
+  ];
+  for (const [dx,dy] of options) {
+    const nx = cx + dx, ny = cy + dy;
+    if (isPassable(nx,ny)) {
+      // avoid immediate reverse unless stuck
+      if (!(dx === -L.dx && dy === -L.dy)) dirs.push([dx,dy]);
+    }
+  }
+  if (dirs.length===0) dirs.push([-L.dx,-L.dy]);
+  const pick = rnd.pick(dirs);
+  L.dx = pick[0]; L.dy = pick[1];
+}
+
+function stepLetters(dt) {
+  for (const L of gameState.letters) {
+    // advance
+    const spd = L.speed * dt;
+    L.x += L.dx * spd; L.y += L.dy * spd;
+    L.x = wrapX(L.x);
+    // choose a new dir at centers
+    chooseLetterDir(L, false);
+  }
+}
+
+function handleCollisions() {
+  // Player vs Letters
+  const need = gameState.roundWord[gameState.progressIndex];
+  for (const L of gameState.letters) {
+    if (L.state !== 'moving') continue;
+    if (dist2(player.x, player.y, L.x, L.y) < 0.25) {
+      if (L.glyph === need) {
+        // collect
+        L.state = 'collected';
+        gameState.progressIndex++;
+        gameState.score += CONFIG.rewards.perCorrectLetter;
+        msgEl.textContent = `Good! Collected '${L.glyph}'`;
+        if (gameState.progressIndex >= gameState.roundWord.length) {
+          gameState.score += CONFIG.rewards.wordBonus;
+          msgEl.textContent = `Word complete: ${gameState.roundWord}! +${CONFIG.rewards.wordBonus}`;
+          // next round
+          const nextWord = CONFIG.words[(CONFIG.words.indexOf(gameState.roundWord)+1) % CONFIG.words.length];
+          spawnRound(nextWord);
+        }
+        updateHUD();
+      } else {
+        // wrong letter
+        gameState.score = Math.max(0, gameState.score - CONFIG.penalties.wrongLetter);
+        msgEl.textContent = `Wrong order! Need '${need}'`;
+        updateHUD();
+      }
+    }
+  }
+}
+
+// -------- Rendering Entities --------
+function drawPlayer() {
+  const ts = CONFIG.tileSize;
+  const px = player.x * ts, py = player.y * ts;
+  const mouth = (Math.sin(player.anim) * 0.25 + 0.25) * Math.PI; // 0..~0.5π
+  const facing = player.lastFacing || 0; // radians
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(facing);
+  ctx.fillStyle = CONFIG.colors.pac;
+  ctx.beginPath();
+  ctx.moveTo(0,0);
+  ctx.arc(0,0, ts*0.48, -mouth/2, Math.PI + mouth/2, false);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawLetters() {
+  const ts = CONFIG.tileSize;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `16px "Courier New", monospace`;
+  for (const L of gameState.letters) {
+    if (L.state !== 'moving') continue;
+    const px = L.x * ts, py = L.y * ts;
+    // stroke for readability
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 2;
+    ctx.strokeText(L.glyph, px, py);
+    ctx.fillText(L.glyph, px, py);
+
+    // outline if this letter is next required
+    const need = gameState.roundWord[gameState.progressIndex];
+    if (L.glyph === need) {
+      ctx.beginPath();
+      ctx.arc(px, py, ts*0.55, 0, Math.PI*2);
+      ctx.strokeStyle = '#ff0';
+      ctx.lineWidth = 1;
+      if (CONFIG.showHint) ctx.stroke();
+    }
+  }
+}
+
+// -------- Timer & Rounds --------
+function stepTimer(dtMs) {
+  gameState.timeLeftMs -= dtMs;
+  if (gameState.timeLeftMs <= 0) {
+    gameState.lives -= 1;
+    if (gameState.lives <= 0) {
+      // Game over
+      gameState.lives = 0;
+      gameState.running = false;
+      msgEl.textContent = "Game Over — Press F5 to restart";
+    } else {
+      // reset same round
+      msgEl.textContent = "Time up! Lost a life; round reset";
+      spawnRound(gameState.roundWord);
+    }
+    updateHUD();
+  }
+}
+
+// -------- Main Loop --------
+let lastTs = performance.now();
+let acc = 0;
+const FIXED_DT = 1/60;
+
+function loop(ts) {
+  if (!gameState.running) return drawFrame(0); // final draw
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (ts - lastTs)/1000);
+  lastTs = ts;
+  if (gameState.paused) return drawFrame(0);
+
+  acc += dt;
+  while (acc >= FIXED_DT) {
+    stepPlayer(FIXED_DT);
+    stepLetters(FIXED_DT);
+    handleCollisions();
+    stepTimer(FIXED_DT * 1000);
+    acc -= FIXED_DT;
+  }
+  drawFrame(acc / FIXED_DT);
+}
+
+function drawFrame(alpha) {
+  drawMaze();
+  drawLetters();
+  drawPlayer();
+}
+
+// -------- Init --------
+function start() {
+  gameState.score = 0;
+  gameState.lives = CONFIG.lives;
+  spawnRound(CONFIG.words[0]);
+  updateHUD();
+  requestAnimationFrame(loop);
+}
+
+start();
+</script>
+</body>
+</html>

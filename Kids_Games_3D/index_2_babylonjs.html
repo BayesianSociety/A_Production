@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cube Collector — Babylon.js</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif; }
+  #renderCanvas { width: 100vw; height: 100vh; display: block; }
+  #ui { position: fixed; top: 12px; left: 12px; background: rgba(0,0,0,.55); color: #fff; padding: 8px 12px; border-radius: 12px; font-size: 14px; line-height: 1.3; z-index: 10; }
+</style>
+</head>
+<body>
+<div id="ui">
+  <div><b>Cube Collector</b> · Babylon.js</div>
+  <div>Score: <span id="score">0</span></div>
+  <div>Move: WASD / Arrow Keys</div>
+</div>
+<canvas id="renderCanvas"></canvas>
+
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<script>
+(() => {
+  const canvas = document.getElementById('renderCanvas');
+  const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true, antialias: true });
+
+  const createScene = () => {
+    const scene = new BABYLON.Scene(engine);
+    scene.clearColor = new BABYLON.Color4(0.125, 0.157, 0.204, 1.0);
+
+    // Lights
+    new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
+    const dir = new BABYLON.DirectionalLight('dir', new BABYLON.Vector3(-1, -2, -0.5), scene);
+    dir.position = new BABYLON.Vector3(5, 10, 2);
+
+    // Ground
+    const ground = BABYLON.MeshBuilder.CreateGround('ground', { width: 20, height: 20 }, scene);
+    const groundMat = new BABYLON.StandardMaterial('gm', scene);
+    groundMat.diffuseColor = new BABYLON.Color3(0.165, 0.616, 0.561);
+    ground.material = groundMat;
+
+    // Player (box)
+    const PLAYER_SIZE = 1;
+    const player = BABYLON.MeshBuilder.CreateBox('player', { size: PLAYER_SIZE }, scene);
+    player.position.y = PLAYER_SIZE / 2;
+    const pMat = new BABYLON.StandardMaterial('pm', scene);
+    pMat.diffuseColor = new BABYLON.Color3(1.0, 0.765, 0.188);
+    player.material = pMat;
+
+    // Coin (torus)
+    const COIN_R = 0.35;
+    const coin = BABYLON.MeshBuilder.CreateTorus('coin', { diameter: COIN_R * 2, thickness: 0.3, tessellation: 24 }, scene);
+    coin.rotation.x = Math.PI / 2;
+    const cMat = new BABYLON.StandardMaterial('cm', scene);
+    cMat.diffuseColor = new BABYLON.Color3(0.969, 0.145, 0.522);
+    cMat.emissiveColor = new BABYLON.Color3(0.2, 0.05, 0.15);
+    coin.material = cMat;
+
+    // Camera (follow)
+    const camera = new BABYLON.FollowCamera('cam', new BABYLON.Vector3(0, 6, -10), scene);
+    camera.radius = 7;        // distance to target
+    camera.heightOffset = 2;  // height from target
+    camera.rotationOffset = 180; // behind player
+    camera.attachControl(canvas, true);
+    camera.lockedTarget = player; // follow the player
+
+    // Input handling
+    const keys = {};
+    window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
+    window.addEventListener('keyup',   (e) => keys[e.key.toLowerCase()] = false);
+
+    // Motion & gameplay
+    const bounds = 9;
+    const vel = new BABYLON.Vector3(0,0,0);
+    const speed = 6;
+    const friction = 6;
+    let score = 0; const scoreEl = document.getElementById('score');
+
+    const randomPos = () => (Math.random() * 2 - 1) * bounds * 0.9;
+    const respawnCoin = () => coin.position.set(randomPos(), 0.35, randomPos());
+    respawnCoin();
+
+    scene.onBeforeRenderObservable.add(() => {
+      const dt = Math.min(0.05, engine.getDeltaTime() / 1000);
+
+      // Input → acceleration
+      let ax = 0, az = 0;
+      if (keys['w'] || keys['arrowup'])    az -= 1;
+      if (keys['s'] || keys['arrowdown'])  az += 1;
+      if (keys['a'] || keys['arrowleft'])  ax -= 1;
+      if (keys['d'] || keys['arrowright']) ax += 1;
+
+      if (ax || az) {
+        const len = Math.hypot(ax, az) || 1;
+        vel.x += (ax / len) * speed * dt;
+        vel.z += (az / len) * speed * dt;
+      }
+      // friction
+      vel.x -= vel.x * Math.min(1, friction * dt);
+      vel.z -= vel.z * Math.min(1, friction * dt);
+
+      // integrate + clamp
+      player.position.x = Math.max(-bounds, Math.min(bounds, player.position.x + vel.x * dt));
+      player.position.z = Math.max(-bounds, Math.min(bounds, player.position.z + vel.z * dt));
+
+      // coin spin + collision
+      coin.rotation.z += 2 * dt;
+      if (BABYLON.Vector3.Distance(player.position, coin.position) < PLAYER_SIZE * 0.6 + COIN_R) {
+        score++; scoreEl.textContent = score;
+        respawnCoin();
+      }
+    });
+
+    return scene;
+  };
+
+  const scene = createScene();
+  engine.runRenderLoop(() => scene.render());
+  window.addEventListener('resize', () => engine.resize());
+})();
+</script>
+</body>
+</html>

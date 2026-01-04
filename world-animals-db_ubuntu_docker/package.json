@@ -1,0 +1,29 @@
+{
+  "name": "world-animals-db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon -w src -w prisma -x \"node --env-file=.env src/server.js\"",
+    "start": "node --env-file=.env src/server.js",
+    "prisma:generate": "prisma generate",
+    "migrate": "prisma migrate dev --name init",
+    "seed": "node prisma/seed.js",
+    "import:countries": "node scripts/import-country-data.js",
+    "import:index": "node scripts/import-from-index.js ./public/index.html",
+    "build:globals": "node scripts/build-globals-from-db.js",
+	"ensure:continents": "node scripts/ensure-continents.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.17.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "morgan": "^1.10.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "prisma": "^5.17.0"
+  }
+}

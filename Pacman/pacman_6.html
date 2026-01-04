@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>C64 Style Pac-Man — Power Mode + Lives + Death Pause</title>
+  <style>
+    canvas { border: 2px solid #000; background:#000; image-rendering: pixelated; }
+    body { display:flex; justify-content:center; align-items:center; height:100vh; margin:0;
+           background:#333; font-family:"Courier New", Courier, monospace; color:#0f0; }
+    #gameContainer { text-align:center; }
+    #score, #lives { font-size:24px; margin:6px 0; color:#0f0; }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <div id="score">Score: 0</div>
+    <div id="lives">Lives: 3</div>
+    <canvas id="gameCanvas" width="448" height="496"></canvas>
+  </div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const scoreDisplay = document.getElementById("score");
+const livesDisplay = document.getElementById("lives");
+
+// --- Constants ---
+const tileSize = 16;
+const W = 28, H = 31;
+
+// Tile codes
+const T_WALL = 1, T_EMPTY = 0, T_DOT = 2, T_POWER = 3;
+
+// Power mode configuration
+const POWER_DURATION = 6.0;        // seconds ghosts stay vulnerable
+const POWER_FLASH_FROM = 2.0;      // flashing during the last N seconds
+const GHOST_CHAIN_SCORES = [200, 400, 800, 1600]; // 1st..4th ghost
+
+// Ghost states
+const G_NORMAL = 0, G_FRIGHTENED = 1, G_EYES = 2;
+
+// Colors
+const colors = {
+  wall:"#00f", dot:"#fff", pacman:"#ff0",
+  ghost:["#f00","#0ff","#f0f","#ffa500"], eye:"#fff", pupil:"#00f"
+};
+
+// 1=wall, 0=empty, 2=dot
+const map = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,1,0,0,1,2,1,0,0,0,1,2,1,1,2,1,0,0,0,1,2,1,0,0,1,2,1],
+  [1,2,1,0,0,1,2,1,0,0,0,1,2,1,1,2,1,0,0,0,1,2,1,0,0,1,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],
+  [1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],
+  [0,0,0,0,0,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,1,1,1,0,0,1,1,1,0,1,1,2,1,0,0,0,0,0],
+  [1,1,1,1,1,1,2,1,1,0,1,0,0,0,0,0,0,1,0,1,1,2,1,1,1,1,1,1],
+  [0,0,0,0,0,0,2,0,0,0,1,0,0,0,0,0,0,1,0,0,0,2,0,0,0,0,0,0],
+  [1,1,1,1,1,1,2,1,1,0,1,0,0,0,0,0,0,1,0,1,1,2,1,1,1,1,1,1],
+  [0,0,0,0,0,1,2,1,1,0,1,1,1,1,1,1,1,1,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,0,0,0,0,0],
+  [0,0,0,0,0,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,0,0,0,0,0],
+  [1,1,1,1,1,1,2,1,1,1,1,1,0,1,1,0,1,1,1,1,1,2,1,1,1,1,1,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1],
+  [1,2,2,2,1,1,2,2,2,2,2,2,2,0,0,2,2,2,2,2,2,2,1,1,2,2,2,1],
+  [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
+  [1,1,1,2,1,1,2,1,1,2,1,1,1,1,1,1,1,1,2,1,1,2,1,1,2,1,1,1],
+  [1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,1,1,2,2,2,2,2,2,1],
+  [1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1],
+  [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+// Convert four dots into Power Pellets (corners-like)
+map[1][1]   = T_POWER;
+map[1][26]  = T_POWER;
+map[28][1]  = T_POWER;
+map[28][26] = T_POWER;
+
+// --- Helpers ---
+const wrapX = (tx) => ( (tx % W) + W ) % W;
+function getTile(tx, ty) { if (ty < 0 || ty >= H) return T_WALL; return map[ty][wrapX(tx)]; }
+function setTile(tx, ty, v) { if (ty < 0 || ty >= H) return; map[ty][wrapX(tx)] = v; }
+function isWall(tx, ty){ return getTile(tx, ty) === T_WALL; }
+function isPassable(tx, ty){ return !isWall(tx, ty); }
+function passableFrom(tx, ty, dx, dy){ return isPassable(tx + dx, ty + dy); }
+
+// Integer wrap for BFS (tile coords)
+const wrapXi = (tx) => ((tx % W) + W) % W;
+const _k = (x,y) => x + "|" + y;
+
+// Are two positions in the same tile?
+function sameTile(ax, ay, bx, by) {
+  return Math.floor(ax) === Math.floor(bx) && Math.floor(ay) === Math.floor(by);
+}
+// Next tile center ahead along dir (+1 or -1)
+function nextCenterAhead(pos, dir) {
+  const base = Math.floor(pos + 0.5);
+  return dir > 0 ? base + 0.5 : base - 0.5;
+}
+
+// Find nearest non-wall tile to goal (if you placed the house “inside” walls)
+function nearestReachableTo(gx, gy) {
+  gx = wrapXi(gx);
+  if (!isWall(gx, gy)) return { gx, gy };
+  const seen = new Set([_k(gx, gy)]);
+  const q = [{ x: gx, y: gy }];
+  const dirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+  while (q.length) {
+    const n = q.shift();
+    for (const d of dirs) {
+      const nx = wrapXi(n.x + d.x), ny = n.y + d.y;
+      if (ny < 0 || ny >= H) continue;
+      const key = _k(nx, ny);
+      if (seen.has(key)) continue;
+      if (!isWall(nx, ny)) return { gx: nx, gy: ny };
+      seen.add(key); q.push({ x: nx, y: ny });
+    }
+  }
+  return { gx, gy };
+}
+
+// First step of a shortest path (BFS) from start tile → goal tile (wrap-aware X)
+function firstStepBFS(tx, ty, gx, gy) {
+  gx = wrapXi(gx);
+  const seen = new Set([_k(tx, ty)]);
+  const q = [];
+  const dirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+
+  // seed neighbors of start with their "first step"
+  for (const d of dirs) {
+    const nx = wrapXi(tx + d.x), ny = ty + d.y;
+    if (ny < 0 || ny >= H || isWall(nx, ny)) continue;
+    const key = _k(nx, ny);
+    if (seen.has(key)) continue;
+    q.push({ x: nx, y: ny, first: d });
+    seen.add(key);
+  }
+
+  while (q.length) {
+    const node = q.shift();
+    if (node.x === gx && node.y === gy) return node.first;
+    for (const d of dirs) {
+      const nx = wrapXi(node.x + d.x), ny = node.y + d.y;
+      if (ny < 0 || ny >= H || isWall(nx, ny)) continue;
+      const key = _k(nx, ny);
+      if (seen.has(key)) continue;
+      q.push({ x: nx, y: ny, first: node.first });
+      seen.add(key);
+    }
+  }
+  return null; // unreachable (shouldn’t happen on this map)
+}
+
+// --- Entities ---
+let score = 0;
+let lives = 3;
+const pacman = { x:14.5, y:24.5, dx:1, dy:0, wantX:1, wantY:0, speed:9, anim:0, lastFacing:0 };
+
+const ghostSpeed = 7;
+const ghosts = [
+  { x:12.5, y:11.5, dx:0, dy:1,  speed:ghostSpeed, color:colors.ghost[0], state:G_NORMAL, frightenedBlink:false, speedMult:1.0, goalX:14.5, goalY:14.5 },
+  { x:15.5, y:11.5, dx:0, dy:-1, speed:ghostSpeed, color:colors.ghost[1], state:G_NORMAL, frightenedBlink:false, speedMult:1.0, goalX:14.5, goalY:14.5 },
+  { x:12.5, y:12.5, dx:1, dy:0,  speed:ghostSpeed, color:colors.ghost[2], state:G_NORMAL, frightenedBlink:false, speedMult:1.0, goalX:14.5, goalY:14.5 },
+  { x:15.5, y:12.5, dx:-1,dy:0,  speed:ghostSpeed, color:colors.ghost[3], state:G_NORMAL, frightenedBlink:false, speedMult:1.0, goalX:14.5, goalY:14.5 },
+];
+
+// Power-mode globals
+let powerTimer = 0;
+let ghostChainIndex = 0;
+
+// Snapshot the initial map AFTER placing power pellets
+const initialMap = map.map(row => row.slice());
+
+// --- Input ---
+document.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowUp")    pacman.wantX = 0, pacman.wantY = -1;
+  else if (e.key === "ArrowDown") pacman.wantX = 0, pacman.wantY = 1;
+  else if (e.key === "ArrowLeft") pacman.wantX = -1, pacman.wantY = 0;
+  else if (e.key === "ArrowRight")pacman.wantX = 1, pacman.wantY = 0;
+});
+
+// --- Power state machine ---
+function startFrightenedMode() {
+  powerTimer = POWER_DURATION;
+  ghostChainIndex = 0;
+  ghosts.forEach(g => {
+    if (g.state !== G_EYES) {
+      g.state = G_FRIGHTENED;
+      g.speedMult = 0.8;       // a bit slower when blue
+      g.frightenedBlink = false;
+    }
+  });
+}
+function endFrightenedMode() {
+  powerTimer = 0;
+  ghostChainIndex = 0;
+  ghosts.forEach(g => {
+    if (g.state === G_FRIGHTENED) {
+      g.state = G_NORMAL;
+      g.speedMult = 1.0;
+      g.frightenedBlink = false;
+    }
+  });
+}
+function updatePowerTimer(dt) {
+  if (powerTimer <= 0) return;
+  powerTimer = Math.max(0, powerTimer - dt);
+  const flashing = powerTimer > 0 && powerTimer <= POWER_FLASH_FROM;
+  if (flashing) {
+    const phase = Math.floor(powerTimer * 8) % 2; // toggle ~8Hz
+    ghosts.forEach(g => { if (g.state === G_FRIGHTENED) g.frightenedBlink = (phase === 0); });
+  } else {
+    ghosts.forEach(g => { if (g.state === G_FRIGHTENED) g.frightenedBlink = false; });
+  }
+  if (powerTimer === 0) endFrightenedMode();
+}
+
+// ---------- Lives / Reset helpers ----------
+function updateLivesUI() {
+  if (livesDisplay) livesDisplay.textContent = `Lives: ${lives}`;
+}
+function restoreMapFromInitial() {
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) map[y][x] = initialMap[y][x];
+}
+function resetPositionsAfterDeath() {
+  // Pac-Man
+  pacman.x = 14.5; pacman.y = 24.5;
+  pacman.dx = 1; pacman.dy = 0;
+  pacman.wantX = 1; pacman.wantY = 0;
+  pacman.anim = 0;
+
+  // Ghosts
+  ghosts[0].x=12.5; ghosts[0].y=11.5; ghosts[0].dx=0;  ghosts[0].dy=1;
+  ghosts[1].x=15.5; ghosts[1].y=11.5; ghosts[1].dx=0;  ghosts[1].dy=-1;
+  ghosts[2].x=12.5; ghosts[2].y=12.5; ghosts[2].dx=1;  ghosts[2].dy=0;
+  ghosts[3].x=15.5; ghosts[3].y=12.5; ghosts[3].dx=-1; ghosts[3].dy=0;
+  ghosts.forEach(g => { g.state = G_NORMAL; g.speedMult = 1.0; g.frightenedBlink = false; });
+
+  // Power mode canceled on death
+  endFrightenedMode();
+}
+function gameOverFullReset() {
+  alert(`Game Over! Score: ${score}`);
+  score = 0; scoreDisplay.textContent = "Score: 0";
+
+  restoreMapFromInitial();  // restore pellets & power pellets
+  lives = 3;                // new game
+  updateLivesUI();
+
+  resetPositionsAfterDeath();
+}
+function loseLife(reason = "ghost") {
+  lives = Math.max(0, lives - 1);
+  updateLivesUI();
+  if (lives > 0) resetPositionsAfterDeath();
+  else gameOverFullReset();
+}
+
+// --- Death sequence state machine (NEW) ---
+const STATE_PLAYING = 0, STATE_DEATH = 1;
+let gameState = STATE_PLAYING;
+
+const DEATH_DURATION = 1.0; // seconds to pause
+let deathTimer = 0;
+let deathFlicker = false;    // toggles during the pause
+
+function startDeathSequence(reason = "ghost") {
+  gameState = STATE_DEATH;
+  deathTimer = DEATH_DURATION;
+  deathFlicker = false;
+
+  // Center & freeze everyone
+  const centerFreeze = (e) => {
+    e.x = Math.floor(e.x) + 0.5;
+    e.y = Math.floor(e.y) + 0.5;
+    e.dx = 0; e.dy = 0;
+  };
+  centerFreeze(pacman);
+  ghosts.forEach(centerFreeze);
+}
+
+function updateDeathSequence(dt) {
+  deathTimer -= dt;
+  // 10Hz flicker
+  deathFlicker = (Math.floor(deathTimer * 10) % 2) === 0;
+
+  if (deathTimer <= 0) {
+    gameState = STATE_PLAYING;
+    loseLife("ghost");
+  }
+}
+
+// --- Update ---
+function update(dt) {
+  // During death pause: no movement, just timer/flicker
+  if (gameState === STATE_DEATH) {
+    updateDeathSequence(dt);
+    pacman.anim += dt * 10; // keep mouth anim if you want
+    return;
+  }
+
+  updatePacman(dt);
+  ghosts.forEach(g => updateGhost(g, dt));
+  updatePowerTimer(dt);
+  checkPacmanGhostCollisions();
+  pacman.anim += dt * 10;
+}
+
+function updatePacman(dt) {
+  const cx = Math.floor(pacman.x) + 0.5;
+  const cy = Math.floor(pacman.y) + 0.5;
+  const near = (a,b)=>Math.abs(a-b)<0.15;
+
+  // instant reversal if legal
+  const isReverse = (pacman.wantX === -pacman.dx && pacman.wantX !== 0) ||
+                    (pacman.wantY === -pacman.dy && pacman.wantY !== 0);
+  if (isReverse && passableFrom(Math.floor(cx), Math.floor(cy), pacman.wantX, pacman.wantY)) {
+    pacman.x = cx; pacman.y = cy;
+    pacman.dx = pacman.wantX; pacman.dy = pacman.wantY;
+  }
+
+  // take buffered turn at center if legal
+  if (near(pacman.x,cx) && near(pacman.y,cy)) {
+    if ((pacman.wantX || pacman.wantY) &&
+        passableFrom(Math.floor(cx), Math.floor(cy), pacman.wantX, pacman.wantY)) {
+      pacman.x = cx; pacman.y = cy;
+      pacman.dx = pacman.wantX; pacman.dy = pacman.wantY;
+    }
+    // stop at center if blocked ahead
+    if (!passableFrom(Math.floor(cx), Math.floor(cy), pacman.dx, pacman.dy)) {
+      pacman.dx = 0; pacman.dy = 0;
+    }
+  }
+
+  // move + center along lane
+  if (pacman.dx || pacman.dy) {
+    if (pacman.dx) pacman.y = cy; else pacman.x = cx;
+    pacman.x += pacman.dx * pacman.speed * dt;
+    pacman.y += pacman.dy * pacman.speed * dt;
+    pacman.x = wrapX(pacman.x);
+    pacman.lastFacing = Math.atan2(pacman.dy, pacman.dx);
+  }
+
+  // Eat pellets (dots / power)
+  handlePacmanEatsTile();
+}
+
+function handlePacmanEatsTile() {
+  const tx = Math.floor(pacman.x), ty = Math.floor(pacman.y);
+  const t = getTile(tx, ty);
+  if (t === T_DOT) {
+    setTile(tx, ty, T_EMPTY);
+    score += 10; scoreDisplay.textContent = "Score: " + score;
+  } else if (t === T_POWER) {
+    setTile(tx, ty, T_EMPTY);
+    score += 50; scoreDisplay.textContent = "Score: " + score;
+    startFrightenedMode();
+  }
+}
+
+// --- Ghost logic ---
+function chooseDirRandomNonReverse(g, cx, cy) {
+  const rev = {x:-g.dx, y:-g.dy};
+  const dirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+  const opts = [];
+  for (const d of dirs) {
+    if (d.x === rev.x && d.y === rev.y) continue;
+    if (isPassable(Math.floor(cx)+d.x, Math.floor(cy)+d.y)) opts.push(d);
+  }
+  if (opts.length === 0) return rev;
+  return opts[(Math.random()*opts.length)|0];
+}
+function chooseDirAwayFromPacman(g, cx, cy) {
+  const rev = {x:-g.dx, y:-g.dy};
+  const dirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+  let opts = [];
+  for (const d of dirs) {
+    if (d.x === rev.x && d.y === rev.y) continue;
+    if (isPassable(Math.floor(cx)+d.x, Math.floor(cy)+d.y)) opts.push(d);
+  }
+  if (opts.length === 0) return rev;
+  const best = opts.reduce((best, d)=>{
+    const nx = cx + d.x, ny = cy + d.y;
+    const dd = (nx - pacman.x)**2 + (ny - pacman.y)**2;
+    return (dd > best.dd) ? {d, dd} : best;
+  }, {d: opts[0], dd: -Infinity}).d;
+  return best;
+}
+// Greedy wrap-aware fallback (used only if BFS fails—shouldn’t happen)
+function chooseDirTowardGoal(g) {
+  const cx = Math.floor(g.x) + 0.5;
+  const cy = Math.floor(g.y) + 0.5;
+  const tx = Math.floor(cx), ty = Math.floor(cy);
+  const dirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+
+  let best = null, bestScore = Infinity;
+  for (const d of dirs) {
+    if (!isPassable(tx + d.x, ty + d.y)) continue;
+    const nx = cx + d.x, ny = cy + d.y;
+    const score = Math.min(Math.abs(nx - g.goalX), W - Math.abs(nx - g.goalX)) + Math.abs(ny - g.goalY);
+    if (score < bestScore) { bestScore = score; best = d; }
+  }
+  if (best) { g.dx = best.x; g.dy = best.y; }
+  else { g.dx = -g.dx; g.dy = -g.dy; }
+}
+
+function updateGhost(g, dt) {
+  const mult = g.speedMult ?? 1.0;
+  let remaining = g.speed * mult * dt; // tiles to move this frame
+
+  while (remaining > 0) {
+    const cx = Math.floor(g.x) + 0.5;
+    const cy = Math.floor(g.y) + 0.5;
+
+    // keep aligned to lane
+    if (g.dx) g.y = cy; else if (g.dy) g.x = cx;
+
+    const onCenter = Math.abs(g.x - cx) < 1e-4 && Math.abs(g.y - cy) < 1e-4;
+    if (onCenter) {
+      const tx = Math.floor(cx), ty = Math.floor(cy);
+      const goalTile = nearestReachableTo(Math.floor(g.goalX), Math.floor(g.goalY));
+
+      // Eyes revive immediately at house
+      if (g.state === G_EYES && tx === goalTile.gx && ty === goalTile.gy) {
+        g.state = G_NORMAL;
+        g.speedMult = 1.0;
+        g.frightenedBlink = false;
+        const c = chooseDirRandomNonReverse(g, cx, cy);
+        g.dx = c.x; g.dy = c.y;
+      }
+
+      // Choose direction at every center
+      if (g.state === G_EYES) {
+        const step = firstStepBFS(tx, ty, goalTile.gx, goalTile.gy);
+        if (step) { g.dx = step.x; g.dy = step.y; }
+        else { chooseDirTowardGoal(g); } // fallback
+      } else if (g.state === G_FRIGHTENED) {
+        const c = chooseDirAwayFromPacman(g, cx, cy); g.dx = c.x; g.dy = c.y;
+      } else {
+        const c = chooseDirRandomNonReverse(g, cx, cy); g.dx = c.x; g.dy = c.y;
+      }
+
+      // Safety: if chosen dir is blocked (rare), pick any legal or reverse
+      if (isWall(tx + g.dx, ty + g.dy)) {
+        const dirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+        const any = dirs.find(d => isPassable(tx + d.x, ty + d.y)) || {x:-g.dx, y:-g.dy};
+        g.dx = any.x; g.dy = any.y;
+      }
+    }
+
+    // Move only up to the NEXT center so we never skip decisions
+    let step = remaining;
+    if (g.dx !== 0) {
+      const nextCenter = (g.dx > 0) ? Math.floor(g.x + 0.5) + 0.5
+                                    : Math.floor(g.x + 0.5) - 0.5;
+      const dist = Math.abs(nextCenter - g.x);
+      step = Math.min(step, dist || remaining);
+      g.x += g.dx * step;
+      g.x = wrapX(g.x); // tunnel wrap
+    } else if (g.dy !== 0) {
+      const nextCenter = (g.dy > 0) ? Math.floor(g.y + 0.5) + 0.5
+                                    : Math.floor(g.y + 0.5) - 0.5;
+      const dist = Math.abs(nextCenter - g.y);
+      step = Math.min(step, dist || remaining);
+      g.y += g.dy * step;
+    } else {
+      break;
+    }
+
+    remaining -= step;
+  }
+}
+
+// --- Collisions (now trigger death sequence) ---
+function checkPacmanGhostCollisions() {
+  for (const g of ghosts) {
+    if (Math.abs(g.x - pacman.x) < 0.5 && Math.abs(g.y - pacman.y) < 0.5) {
+      if (g.state === G_FRIGHTENED) {
+        eatGhost(g);
+      } else if (g.state !== G_EYES) {
+        startDeathSequence("ghost"); // start 1s pause+flicker, life is removed afterward
+        return;
+      }
+      // eyes → ignore
+    }
+  }
+}
+function eatGhost(g) {
+  const add = GHOST_CHAIN_SCORES[Math.min(ghostChainIndex, GHOST_CHAIN_SCORES.length-1)];
+  score += add; scoreDisplay.textContent = "Score: " + score;
+  ghostChainIndex = Math.min(ghostChainIndex + 1, GHOST_CHAIN_SCORES.length - 1);
+
+  g.state = G_EYES;
+  g.speedMult = 1.6;     // eyes move faster
+  g.frightenedBlink = false;
+  g.goalX = 14.5; g.goalY = 14.5;
+  // direction picked at next center via BFS
+}
+
+// --- Draw ---
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // Maze
+  for (let y=0; y<H; y++) for (let x=0; x<W; x++) {
+    const px = x*tileSize, py = y*tileSize;
+    const t = map[y][x];
+    if (t === T_WALL) {
+      ctx.fillStyle = colors.wall; ctx.fillRect(px,py,tileSize,tileSize);
+    } else if (t === T_DOT) {
+      ctx.fillStyle = colors.dot;
+      ctx.beginPath();
+      ctx.arc(px+tileSize/2, py+tileSize/2, tileSize/6, 0, Math.PI*2);
+      ctx.fill();
+    } else if (t === T_POWER) {
+      ctx.fillStyle = colors.dot;
+      const r = tileSize/3;
+      const vis = (Math.floor(performance.now()/250)%2===0) || powerTimer>0;
+      if (vis) {
+        ctx.beginPath();
+        ctx.arc(px+tileSize/2, py+tileSize/2, r, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Pac-Man (hide on alternating frames during death pause)
+  const px = pacman.x*tileSize, py = pacman.y*tileSize;
+  const mouth = Math.abs(Math.sin(pacman.anim)) * (Math.PI/4);
+  const moving = (pacman.dx || pacman.dy);
+  let facing = moving ? Math.atan2(pacman.dy, pacman.dx) : pacman.lastFacing;
+  facing = (facing + Math.PI*2)%(Math.PI*2);
+
+  if (!(gameState === STATE_DEATH && deathFlicker)) {
+    ctx.fillStyle = colors.pacman;
+    ctx.beginPath();
+    ctx.moveTo(px,py);
+    ctx.arc(px,py, tileSize/2-1, facing+mouth, facing - mouth + Math.PI*2);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // Optional subtle flash overlay during death pause
+  // if (gameState === STATE_DEATH && deathFlicker) {
+  //   ctx.globalAlpha = 0.12;
+  //   ctx.fillStyle = "#fff";
+  //   ctx.fillRect(0,0,canvas.width,canvas.height);
+  //   ctx.globalAlpha = 1;
+  // }
+
+  // Ghosts
+  ghosts.forEach(drawGhost);
+}
+
+function drawGhost(g){
+  const gx = g.x*tileSize, gy = g.y*tileSize;
+
+  let bodyColor = g.color;
+  if (g.state === G_FRIGHTENED) bodyColor = g.frightenedBlink ? "#fff" : "#00f";
+  if (g.state !== G_EYES) {
+    ctx.fillStyle = bodyColor;
+    ctx.beginPath();
+    ctx.arc(gx, gy, tileSize/2-1, Math.PI, 0, false);
+    ctx.lineTo(gx + tileSize/2 - 1, gy + tileSize/2 - 1);
+    const bumps=3, bumpW=(tileSize-2)/bumps;
+    for (let i=bumps;i>=0;i--){
+      const x = gx - tileSize/2 + 1 + i*bumpW;
+      const y = gy + tileSize/2 - 1;
+      ctx.quadraticCurveTo(x - bumpW/2, y - 2, x - bumpW, y);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+
+  // Eyes
+  const ex=4, ey=3, er=3, pr=1.5;
+  const dirX = Math.sign(g.dx)||0, dirY = Math.sign(g.dy)||0;
+  ctx.fillStyle = colors.eye;
+  ctx.beginPath(); ctx.arc(gx-ex, gy-ey, er, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(gx+ex, gy-ey, er, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = colors.pupil;
+  ctx.beginPath(); ctx.arc(gx-ex+dirX, gy-ey+dirY, pr, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(gx+ex+dirX, gy-ey+dirY, pr, 0, Math.PI*2); ctx.fill();
+}
+
+// --- Loop ---
+let last = performance.now();
+function loop(now){
+  const dt = Math.min((now-last)/1000, 0.05); last = now;
+  update(dt); draw();
+  requestAnimationFrame(loop);
+}
+
+// Initialize UI and start
+updateLivesUI();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

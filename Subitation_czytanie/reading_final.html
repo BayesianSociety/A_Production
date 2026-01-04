@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Czytanie – kafelki wyboru</title>
+  <style>
+    :root{
+      --bg-start: #fdfefe;
+      --bg-end: #d7f2f0;
+      --tile-start: #f1619f;
+      --tile-end: #b046e0;
+      --tile-border: #ed7ab5;
+      --tile-shadow: #5f216f;
+      --tile-text: #ffffff;
+      --edit-border: #c6d1d3;
+      --edit-shadow: #9eb2b7;
+      --radius: 30px;
+    }
+
+    *{ box-sizing:border-box; }
+    html, body{ height:100%; }
+    body{
+      margin:0;
+      background:radial-gradient(circle at 20% 20%, var(--bg-start) 0%, var(--bg-end) 100%);
+      font-family: "Segoe UI", "Noto Sans", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      color:#34102f;
+      display:grid;
+      place-items:center;
+    }
+
+    #languageMenu {
+      position: fixed;
+      top: 0.75rem;
+      right: 0.75rem;
+      z-index: 12;
+      background: rgba(255,255,255,0.9);
+      border: 1px solid rgba(0,0,0,0.12);
+      padding: 0.6rem 0.8rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      min-width: 160px;
+    }
+    #languageMenu label {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #111;
+    }
+    #languageSelect {
+      min-width: 160px;
+      padding: 0.55rem 0.75rem;
+      font: 600 1rem/1.2 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      border-radius: 10px;
+      border: 1px solid rgba(0,0,0,0.16);
+      background: #fff;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+    }
+    #languageSelect:focus-visible {
+      outline: 3px solid rgba(208,38,96,0.45);
+      outline-offset: 2px;
+    }
+
+    main{
+      width:min(960px, 94vw);
+      padding:32px 18px 48px;
+      text-align:center;
+    }
+
+    h1{
+      margin:0 0 28px;
+      font-size: clamp(28px, 3vw, 38px);
+      font-weight:700;
+      color:#622050;
+    }
+
+    .tiles{
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));
+      gap:34px;
+      justify-items:center;
+    }
+
+    .tile{
+      --shadow-offset:18px;
+      width:210px;
+      height:170px;
+      border:none;
+      border-radius:var(--radius);
+      background:linear-gradient(135deg, var(--tile-start), var(--tile-end));
+      color:var(--tile-text);
+      font-size:24px;
+      font-weight:700;
+      text-transform:none;
+      cursor:pointer;
+      box-shadow: 0 var(--shadow-offset) 0 var(--tile-shadow), 0 calc(var(--shadow-offset) + 8px) 26px rgba(52,16,47,0.25);
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      gap:6px;
+      transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+      padding:0 12px;
+    }
+
+    .tile:focus-visible{
+      outline:4px solid rgba(255,255,255,0.75);
+      outline-offset:2px;
+    }
+
+    .tile:hover{ filter:brightness(1.05); }
+
+    .tile:active{
+      transform:translateY(6px);
+      box-shadow:0 8px 0 var(--tile-shadow), 0 16px 20px rgba(52,16,47,0.22);
+    }
+
+    .tile small{ font-size:18px; font-weight:500; }
+
+    .tile-number{ font-size:52px; }
+
+    .tile--edit{
+      background:#ffffff;
+      color:#5c6163;
+      box-shadow:0 14px 0 var(--edit-shadow), 0 22px 30px rgba(94,115,121,0.2);
+      border:3px solid var(--edit-border);
+    }
+
+    .tile--edit:hover{ filter:none; }
+    .tile--edit:active{
+      box-shadow:0 8px 0 var(--edit-shadow), 0 16px 22px rgba(94,115,121,0.18);
+    }
+
+    .selection{
+      margin-top:32px;
+      font-weight:600;
+      min-height:1.4em;
+      color:#4c2a40;
+    }
+
+    main[hidden]{
+      display:none;
+    }
+
+    #wordDisplayScreen{
+      position:fixed;
+      inset:0;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      background:radial-gradient(circle at 20% 20%, var(--bg-start) 0%, var(--bg-end) 100%);
+      z-index:10;
+      padding:1.5rem;
+      text-align:center;
+    }
+
+    #wordDisplayScreen.active{
+      display:flex;
+    }
+
+    #wordDisplay{
+      font-size:clamp(3rem, 18vmin, 12rem);
+      font-weight:800;
+      color:#111;
+      letter-spacing:0.015em;
+      line-height:1.05;
+      min-width:60vw;
+    }
+
+    @media (max-width:640px){
+      .tile{ width:200px; height:150px; }
+      .tile-number{ font-size:44px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="languageMenu">
+    <label id="pickerHint" for="languageSelect">Select language</label>
+    <select id="languageSelect">
+      <option value="en-US">English</option>
+      <option value="nl-NL">Nederlands</option>
+    </select>
+  </div>
+  <main role="main">
+    <h1 id="pageTitle" data-i18n="title">Czytanie</h1>
+    <section class="tiles" aria-label="Wybór ćwiczeń">
+      <button class="tile" data-choice="tile.3words.value" aria-label="3 wyrazy">
+        <span class="tile-number">3</span>
+        <small data-i18n="tile.3words.bottom">Wyrazy</small>
+      </button>
+      <button class="tile" data-choice="tile.expressions.value">
+        <span data-i18n="tile.expressions.label">Wyrażenia</span>
+      </button>
+      <button class="tile" data-choice="tile.customWords.value">
+        <span data-i18n="tile.customWords.label">Własne wyrazy</span>
+      </button>
+      <button class="tile" data-choice="tile.5words.value" aria-label="5 wyrazów">
+        <span class="tile-number">5</span>
+        <small data-i18n="tile.5words.bottom">Wyrazów</small>
+      </button>
+      <button class="tile" data-choice="tile.sentences.value">
+        <span data-i18n="tile.sentences.label">Zdania</span>
+      </button>
+      <button class="tile" data-choice="tile.customSentences.value">
+        <span data-i18n="tile.customSentences.label">Własne zdania</span>
+      </button>
+      <button class="tile tile--edit" data-choice="tile.edit.value">
+        <span data-i18n="tile.edit.label">Edycja</span>
+      </button>
+    </section>
+    <div class="selection" id="selection" aria-live="polite"></div>
+  </main>
+  <section id="wordDisplayScreen" aria-live="polite" aria-hidden="true">
+    <div id="wordDisplay">&nbsp;</div>
+  </section>
+
+  <script>
+    const selection = document.getElementById('selection');
+    const languageSelect = document.getElementById('languageSelect');
+    const titleEl = document.getElementById('pageTitle');
+    const mainEl = document.querySelector('main');
+    const wordDisplayScreen = document.getElementById('wordDisplayScreen');
+    const wordDisplay = document.getElementById('wordDisplay');
+    let lastChoiceKey = '';
+    let wordSequenceRunning = false;
+    const BASE_WORD_TIME = 400;
+    const MS_PER_CHARACTER = 120;
+    const WORD_ISI_MS = 500;
+
+    const translations = {
+      'en-US': {
+        title: 'Reading',
+        selectionPrefix: 'Selected',
+        'tile.3words.bottom': 'Words',
+        'tile.3words.value': '3 words',
+        'tile.expressions.label': 'Expressions',
+        'tile.expressions.value': 'Expressions',
+        'tile.customWords.label': 'Own words',
+        'tile.customWords.value': 'Own words',
+        'tile.5words.bottom': 'Words',
+        'tile.5words.value': '5 words',
+        'tile.sentences.label': 'Sentences',
+        'tile.sentences.value': 'Sentences',
+        'tile.customSentences.label': 'Own sentences',
+        'tile.customSentences.value': 'Own sentences',
+        'tile.edit.label': 'Editor',
+        'tile.edit.value': 'Editor'
+      },
+      'nl-NL': {
+        title: 'Lezen',
+        selectionPrefix: 'Geselecteerd',
+        'tile.3words.bottom': 'Woorden',
+        'tile.3words.value': '3 woorden',
+        'tile.expressions.label': 'Uitdrukkingen',
+        'tile.expressions.value': 'Uitdrukkingen',
+        'tile.customWords.label': 'Eigen woorden',
+        'tile.customWords.value': 'Eigen woorden',
+        'tile.5words.bottom': 'Woorden',
+        'tile.5words.value': '5 woorden',
+        'tile.sentences.label': 'Zinnen',
+        'tile.sentences.value': 'Zinnen',
+        'tile.customSentences.label': 'Eigen zinnen',
+        'tile.customSentences.value': 'Eigen zinnen',
+        'tile.edit.label': 'Bewerken',
+        'tile.edit.value': 'Bewerken'
+      }
+    };
+    const wordPools = {
+      'en-US': [
+        'forest', 'gentle', 'silver', 'planet', 'harbor', 'garden', 'moment',
+        'whisper', 'rocket', 'canyon', 'sunset', 'wonder', 'packet', 'bridge'
+      ],
+      'nl-NL': [
+        'bosrand', 'zachtjes', 'zilver', 'planeet', 'haven', 'tuinpad',
+        'moment', 'fluister', 'raket', 'kloof', 'zonsondergang', 'wonder',
+        'pakket', 'brug'
+      ]
+    };
+    const expressionPools = {
+      'en-US': [
+        'Trust your instincts',
+        'Follow that light',
+        'Speak with kindness',
+        'Enjoy the journey',
+        'Guard every promise',
+        'Share the wonder'
+      ],
+      'nl-NL': [
+        'Volg je hart',
+        'Blijf steeds lachen',
+        'Luister met aandacht',
+        'Koester elke glimlach',
+        'Deel het avontuur',
+        'Zoek nieuwe ideeën'
+      ]
+    };
+    const sentencePools = {
+      'en-US': [
+        'Every morning brings a choice',
+        'Learning together builds lasting friendships',
+        'Practice patience for enduring growth',
+        'Small acts create brighter days',
+        'Caring words encourage brave steps'
+      ],
+      'nl-NL': [
+        'Elke ochtend biedt een keuze',
+        'Samen leren schept hechte vriendschappen',
+        'Blijf oefenen voor blijvende groei',
+        'Kleine gebaren brengen grote glimlachen',
+        'Rustige ademhaling brengt innerlijke kalmte'
+      ]
+    };
+
+    const normalizeLang = (value) => {
+      return (value || '').toLowerCase().startsWith('nl') ? 'nl-NL' : 'en-US';
+    };
+
+    function currentLang(){
+      return normalizeLang(languageSelect.value);
+    }
+
+    function applyLanguage(){
+      const lang = currentLang();
+      const dict = translations[lang] || translations['en-US'];
+      document.documentElement.lang = lang.startsWith('nl') ? 'nl' : 'en';
+      titleEl.textContent = dict.title;
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.dataset.i18n;
+        if (dict[key]) el.textContent = dict[key];
+      });
+      if (lastChoiceKey){
+        const label = dict[lastChoiceKey] || '';
+        selection.textContent = label ? `${dict.selectionPrefix}: ${label}` : '';
+      } else {
+        selection.textContent = '';
+      }
+    }
+
+    languageSelect.value = normalizeLang(navigator.language || 'en-US');
+    applyLanguage();
+    const speech = 'speechSynthesis' in window ? window.speechSynthesis : null;
+    const speechState = {
+      voices: [],
+      loaded: false,
+      preferredLang: currentLang()
+    };
+    languageSelect.addEventListener('change', () => {
+      applyLanguage();
+      speechState.preferredLang = currentLang();
+      if (speech) speech.cancel();
+    });
+
+    function announce(choiceKey){
+      const lang = currentLang();
+      const dict = translations[lang] || translations['en-US'];
+      lastChoiceKey = choiceKey;
+      const label = dict[choiceKey] || '';
+      selection.textContent = label ? `${dict.selectionPrefix}: ${label}` : '';
+      console.log('Wybrana opcja:', label || choiceKey);
+    }
+
+    function calculateWordDwellMs(word){
+      const sanitized = (word || '').toString().trim();
+      return BASE_WORD_TIME + sanitized.length * MS_PER_CHARACTER;
+    }
+
+    function pickFromPool(pools, lang, count){
+      const source = [...(pools[lang] || pools['en-US'] || [])];
+      const chosen = [];
+      while (chosen.length < count && source.length){
+        const index = Math.floor(Math.random() * source.length);
+        chosen.push(source.splice(index, 1)[0]);
+      }
+      return chosen;
+    }
+
+    function pickWordSet(lang, count = 3){
+      const pool = [...(wordPools[lang] || wordPools['en-US'])];
+      const chosen = [];
+      while (chosen.length < count && pool.length){
+        const index = Math.floor(Math.random() * pool.length);
+        chosen.push(pool.splice(index, 1)[0]);
+      }
+      return chosen;
+    }
+
+    function showWordScreen(){
+      mainEl.setAttribute('hidden', '');
+      wordDisplayScreen.classList.add('active');
+      wordDisplayScreen.setAttribute('aria-hidden', 'false');
+    }
+
+    function hideWordScreen(){
+      wordDisplayScreen.classList.remove('active');
+      wordDisplayScreen.setAttribute('aria-hidden', 'true');
+      wordDisplay.innerHTML = '&nbsp;';
+      mainEl.removeAttribute('hidden');
+    }
+
+    function sleep(ms){
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function loadVoices(){
+      if (!speech) return [];
+      const existing = speech.getVoices();
+      if (existing.length) return existing;
+      return new Promise(resolve => {
+        const handle = () => {
+          speech.removeEventListener('voiceschanged', handle);
+          resolve(speech.getVoices());
+        };
+        speech.addEventListener('voiceschanged', handle, { once: true });
+        setTimeout(() => resolve(speech.getVoices()), 750);
+      });
+    }
+
+    async function ensureVoices(){
+      if (speechState.loaded) return speechState.voices;
+      speechState.voices = await loadVoices();
+      speechState.loaded = true;
+      return speechState.voices;
+    }
+
+    function pickVoice(lang){
+      if (!speechState.voices.length) return null;
+      const key = lang.split('-')[0];
+      return speechState.voices.find(v => v.lang === lang) ||
+             speechState.voices.find(v => v.lang && v.lang.toLowerCase().startsWith(key));
+    }
+
+    async function speakWord(text, lang){
+      if (!speech || !text) return;
+      await ensureVoices();
+      speech.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang;
+      utterance.rate = lang === 'nl-NL' ? 1.25 : 1.4;
+      const voice = pickVoice(lang);
+      if (voice) utterance.voice = voice;
+      speech.speak(utterance);
+    }
+
+    async function startWordSequence({ items = 3, choiceKey = 'tile.3words.value', poolType = 'words' } = {}){
+      if (wordSequenceRunning) return;
+      wordSequenceRunning = true;
+      announce(choiceKey);
+      const lang = currentLang();
+      let words = [];
+      if (poolType === 'expressions'){
+        words = pickFromPool(expressionPools, lang, items);
+      } else if (poolType === 'sentences'){
+        words = pickFromPool(sentencePools, lang, items);
+      } else {
+        words = pickWordSet(lang, items);
+      }
+      if (!words.length){
+        words = pickWordSet(lang, items);
+      }
+      showWordScreen();
+      try{
+        if (speech) speech.cancel();
+        for (const word of words){
+          wordDisplay.textContent = word;
+          await speakWord(word, lang);
+          await sleep(calculateWordDwellMs(word));
+          wordDisplay.innerHTML = '&nbsp;';
+          await sleep(WORD_ISI_MS);
+        }
+      } finally {
+        hideWordScreen();
+        wordSequenceRunning = false;
+      }
+    }
+
+    document.querySelectorAll('.tile').forEach(tile => {
+      const choice = tile.dataset.choice;
+      tile.addEventListener('click', () => {
+        if (choice === 'tile.3words.value'){
+          startWordSequence({ items: 3, choiceKey: 'tile.3words.value', poolType: 'words' });
+        } else if (choice === 'tile.5words.value'){
+          startWordSequence({ items: 5, choiceKey: 'tile.5words.value', poolType: 'words' });
+        } else if (choice === 'tile.expressions.value'){
+          startWordSequence({ items: 3, choiceKey: 'tile.expressions.value', poolType: 'expressions' });
+        } else if (choice === 'tile.sentences.value'){
+          startWordSequence({ items: 3, choiceKey: 'tile.sentences.value', poolType: 'sentences' });
+        } else {
+          announce(choice);
+        }
+      });
+      tile.addEventListener('keydown', (event) => {
+        if(event.key === 'Enter' || event.key === ' '){
+          event.preventDefault();
+          tile.click();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

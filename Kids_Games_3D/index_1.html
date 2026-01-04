@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Neon Runner — Simple 3D Game</title>
+  <style>
+    :root{
+      --bg1:#0f1020; --bg2:#090a14; --accent:#5cf2ff; --accent2:#ff72d2; --text:#e9eef2;
+      --panel:#15182aee; --shadow:#00000099;
+    }
+    html, body{ height:100%; }
+    body{
+      margin:0; overflow:hidden; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial;
+      background: radial-gradient(1200px 800px at 70% -10%, #1a1e3a, transparent 60%),
+                  radial-gradient(1000px 600px at -10% 110%, #10152a, transparent 60%),
+                  linear-gradient(180deg,var(--bg1),var(--bg2));
+      color:var(--text);
+    }
+    /* HUD */
+    .hud{ position:fixed; inset:0; pointer-events:none; }
+    .row{ display:flex; gap:.5rem; align-items:center; }
+    .score{ position:fixed; top:12px; left:12px; background:var(--panel); padding:.6rem .8rem; border-radius:14px; box-shadow:0 10px 30px var(--shadow); backdrop-filter: blur(8px);
+      font-weight:600; letter-spacing:.3px; }
+    .score small{ opacity:.7; font-weight:500; }
+    .score .value{ font-variant-numeric: tabular-nums; font-size:1.25rem; }
+
+    .controls{ position:fixed; top:12px; right:12px; background:var(--panel); padding:.5rem .7rem; border-radius:14px; box-shadow:0 10px 30px var(--shadow); backdrop-filter: blur(8px);
+      font-size:.9rem; opacity:.9; }
+
+    /* Overlays */
+    .overlay{ position:fixed; inset:0; display:grid; place-items:center; background:linear-gradient(180deg,#0b0d1a88,#0b0d1a88); }
+    .card{ pointer-events:auto; width:min(560px,92vw); background:var(--panel); border:1px solid #242842; border-radius:24px; padding:24px; box-shadow:0 30px 60px var(--shadow); }
+    .title{ font-weight:800; font-size:1.9rem; letter-spacing:.2px; margin:0 0 .25rem 0; }
+    .subtitle{ margin:.25rem 0 1rem 0; color:#b7c2d3; }
+    .btn{ pointer-events:auto; display:inline-flex; align-items:center; gap:.5rem; border:0; outline:0; border-radius:14px; padding:.8rem 1rem; font-weight:700; letter-spacing:.3px; cursor:pointer; 
+      background: linear-gradient(90deg, var(--accent), var(--accent2)); color:#0b0d14; box-shadow:0 10px 30px var(--shadow); }
+    .btn.secondary{ background:#242842; color:#dbe6f9; border:1px solid #2d3356; }
+    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    .kbd{ background:#0a0e1e; color:#cde7ff; padding:.2rem .4rem; border-radius:6px; border:1px solid #1e2340; font-weight:700; }
+
+    /* Mobile touch controls */
+    .touchBar{ position:fixed; inset:auto 0 0 0; height:120px; display:none; grid-template-columns:1fr 1fr; gap:10px; padding:12px; }
+    .touchBtn{ pointer-events:auto; user-select:none; touch-action:manipulation; display:grid; place-items:center; border-radius:18px; background:#13162a88; border:1px solid #23284b; color:#cde7ff; font-weight:800; font-size:1.2rem; }
+    @media (max-width: 820px){ .touchBar{ display:grid; } }
+
+    /* Tiny toast */
+    .toast{ position:fixed; left:50%; bottom:18px; transform:translateX(-50%); background:#11152a; border:1px solid #23284b; border-radius:12px; padding:.5rem .8rem; font-size:.9rem; opacity:.9; display:none; }
+  </style>
+</head>
+<body>
+  <!-- 3D canvas will be injected by Three.js renderer -->
+
+  <!-- HUD -->
+  <div class="hud" aria-hidden="true">
+    <div class="score">
+      <div class="row"><small>Score</small> <small style="margin-left:auto;opacity:.6">Best: <span id="best">0</span></small></div>
+      <div class="value" id="score">0</div>
+    </div>
+    <div class="controls">
+      <div class="row" style="gap:10px">
+        <div><span class="kbd">A</span>/<span class="kbd">D</span> or 
+             <span class="kbd">◀</span>/<span class="kbd">▶</span> — Move</div>
+        <div>| <span class="kbd">P</span> — Pause</div>
+        <div>| <span class="kbd">R</span> — Restart</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Start Overlay -->
+  <div id="start" class="overlay">
+    <div class="card">
+      <h1 class="title">Neon Runner</h1>
+      <p class="subtitle">Dodge the incoming blocks. Survive as long as you can to rack up points!</p>
+      <div class="grid" style="margin-bottom:14px">
+        <div>
+          <strong>Desktop</strong>
+          <div><span class="kbd">A</span>/<span class="kbd">D</span> or <span class="kbd">◀</span>/<span class="kbd">▶</span> to move</div>
+          <div><span class="kbd">P</span> to pause • <span class="kbd">R</span> to restart</div>
+        </div>
+        <div>
+          <strong>Mobile</strong>
+          <div>Use the on-screen ⟵ ⟶ buttons</div>
+        </div>
+      </div>
+      <button class="btn" id="startBtn">▶ Play</button>
+    </div>
+  </div>
+
+  <!-- Game Over Overlay -->
+  <div id="gameover" class="overlay" style="display:none">
+    <div class="card">
+      <h2 class="title" style="font-size:1.6rem">Game Over</h2>
+      <p class="subtitle">You collided with a block. Better luck next run!</p>
+      <div class="row" style="justify-content:space-between; margin-top:.5rem">
+        <div>Final score: <strong id="finalScore">0</strong></div>
+        <div>Best: <strong id="finalBest">0</strong></div>
+      </div>
+      <div class="row" style="gap:10px; margin-top:1rem">
+        <button class="btn" id="restartBtn">↻ Restart</button>
+        <button class="btn secondary" id="menuBtn">Back to Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Touch controls for mobile -->
+  <div class="touchBar" id="touchBar" aria-hidden="true">
+    <div class="touchBtn" id="leftBtn">⟵</div>
+    <div class="touchBtn" id="rightBtn">⟶</div>
+  </div>
+
+  <div class="toast" id="toast">Paused</div>
+
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+
+    // --- Core ---
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x0b0d1a, 16, 60);
+
+    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 200);
+    camera.position.set(0, 3.3, 8.5);
+    camera.lookAt(0, 1.0, 0);
+
+    // Lighting
+    const ambient = new THREE.AmbientLight(0x668cff, 0.6);
+    scene.add(ambient);
+
+    const dir = new THREE.DirectionalLight(0xffffff, 1.1);
+    dir.position.set(4, 8, 6);
+    dir.castShadow = true;
+    dir.shadow.mapSize.set(2048, 2048);
+    scene.add(dir);
+
+    // Ground (glow lanes)
+    const groundGeo = new THREE.PlaneGeometry(20, 120, 20, 40);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x0b0d1a,
+      metalness: .1,
+      roughness: .9,
+      side: THREE.DoubleSide,
+    });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.receiveShadow = true;
+    ground.rotation.x = -Math.PI/2;
+    ground.position.z = -30;
+    scene.add(ground);
+
+    // Neon lane lines
+    const laneCount = 5;
+    const laneWidth = 2.2; // overall track width ~ laneCount * laneWidth
+    const trackHalf = (laneCount-1) * laneWidth * 0.5;
+
+    const lanes = new THREE.Group();
+    for (let i = 0; i < laneCount; i++){
+      const lineGeo = new THREE.PlaneGeometry(.08, 120);
+      const lineMat = new THREE.MeshBasicMaterial({ color:0x5cf2ff, transparent:true, opacity:.5, side:THREE.DoubleSide });
+      const line = new THREE.Mesh(lineGeo, lineMat);
+      line.position.set((i * laneWidth) - trackHalf, 0.01, -30);
+      line.rotation.x = -Math.PI/2;
+      lanes.add(line);
+    }
+    scene.add(lanes);
+
+    // Player (sphere)
+    const playerGeo = new THREE.SphereGeometry(0.6, 32, 32);
+    const playerMat = new THREE.MeshStandardMaterial({ color:0xffffff, emissive:0x3cc0ff, emissiveIntensity:.35, metalness: .3, roughness: .25 });
+    const player = new THREE.Mesh(playerGeo, playerMat);
+    player.castShadow = true;
+    player.position.set(0, 0.6, 0);
+    scene.add(player);
+
+    const playerRadius = 0.6;
+
+    // Subtle halo under player
+    const haloGeo = new THREE.CircleGeometry(0.9, 32);
+    const haloMat = new THREE.MeshBasicMaterial({ color:0x5cf2ff, transparent:true, opacity:.35 });
+    const halo = new THREE.Mesh(haloGeo, haloMat);
+    halo.rotation.x = -Math.PI/2; halo.position.y = .01; scene.add(halo);
+
+    // Obstacles
+    const obstacleGroup = new THREE.Group();
+    scene.add(obstacleGroup);
+
+    function makeObstacle(){
+      const w = THREE.MathUtils.randFloat(.9, 1.6);
+      const h = THREE.MathUtils.randFloat(1.2, 2.0);
+      const d = THREE.MathUtils.randFloat(1.0, 2.0);
+      const geo = new THREE.BoxGeometry(w, h, d);
+      const mat = new THREE.MeshStandardMaterial({ color:0x9b51e0, metalness:.1, roughness:.35, emissive:0x7a2bc8, emissiveIntensity:.25 });
+      const m = new THREE.Mesh(geo, mat);
+      m.castShadow = true; m.receiveShadow = true;
+      m.userData.size = new THREE.Vector3(w, h, d);
+      return m;
+    }
+
+    const pool = [];
+    const alive = [];
+    function spawnObstacle(speed){
+      const m = pool.pop() || makeObstacle();
+      const laneIndex = Math.floor(Math.random()*laneCount);
+      const x = (laneIndex * laneWidth) - trackHalf;
+      m.position.set(x, m.userData.size.y/2, -60);
+      m.rotation.y = Math.random()*Math.PI;
+      m.userData.speed = speed;
+      obstacleGroup.add(m);
+      alive.push(m);
+    }
+
+    function recycle(m){
+      obstacleGroup.remove(m);
+      pool.push(m);
+    }
+
+    // Input
+    const keys = new Map();
+    window.addEventListener('keydown', (e)=>{ keys.set(e.code, true); if(e.code==='KeyP') togglePause(); if(e.code==='KeyR') hardRestart(); });
+    window.addEventListener('keyup',   (e)=>{ keys.set(e.code, false); });
+
+    // Touch (mobile)
+    const leftBtn = document.getElementById('leftBtn');
+    const rightBtn = document.getElementById('rightBtn');
+    let touchLeft=false, touchRight=false;
+    const tStart = (side)=>()=>{ if(side==='L') touchLeft=true; else touchRight=true; };
+    const tEnd   = (side)=>()=>{ if(side==='L') touchLeft=false; else touchRight=false; };
+    leftBtn.addEventListener('pointerdown', tStart('L')); leftBtn.addEventListener('pointerup', tEnd('L')); leftBtn.addEventListener('pointerleave', tEnd('L'));
+    rightBtn.addEventListener('pointerdown', tStart('R')); rightBtn.addEventListener('pointerup', tEnd('R')); rightBtn.addEventListener('pointerleave', tEnd('R'));
+
+    // UI elements
+    const startOverlay = document.getElementById('start');
+    const startBtn = document.getElementById('startBtn');
+    const gameoverOverlay = document.getElementById('gameover');
+    const restartBtn = document.getElementById('restartBtn');
+    const menuBtn = document.getElementById('menuBtn');
+    const scoreEl = document.getElementById('score');
+    const bestEl = document.getElementById('best');
+    const finalScoreEl = document.getElementById('finalScore');
+    const finalBestEl = document.getElementById('finalBest');
+    const toast = document.getElementById('toast');
+
+    const touchBar = document.getElementById('touchBar');
+    if (window.matchMedia('(pointer: coarse)').matches) touchBar.style.display = 'grid';
+
+    // Game state
+    let gameState = 'menu'; // 'menu' | 'playing' | 'paused' | 'over'
+    let score = 0; let best = Number(localStorage.getItem('neonRunnerBest')||0); bestEl.textContent = best.toFixed(0);
+    let speed = 12; // forward speed (z)
+    let spawnEvery = 0.85; // seconds between spawns
+    const minSpawnEvery = 0.33;
+    const maxSpeed = 32;
+    let spawnTimer = 0;
+
+    let vX = 0; const accel = 36; const damping = 12; // movement
+
+    function startGame(){
+      gameState = 'playing';
+      startOverlay.style.display = 'none';
+      gameoverOverlay.style.display = 'none';
+      score = 0; speed = 12; spawnEvery = 0.9; spawnTimer = 0; vX = 0;
+      // clear obstacles
+      while(alive.length){ recycle(alive.pop()); }
+      player.position.set(0, playerRadius, 0);
+      clock.elapsedTime = 0; lastTime = performance.now();
+    }
+    function gameOver(){
+      gameState = 'over';
+      finalScoreEl.textContent = score.toFixed(0);
+      best = Math.max(best, score); localStorage.setItem('neonRunnerBest', String(best));
+      finalBestEl.textContent = best.toFixed(0);
+      gameoverOverlay.style.display = '';
+    }
+    function hardRestart(){ if(gameState !== 'menu'){ startGame(); } }
+
+    startBtn.addEventListener('click', startGame);
+    restartBtn.addEventListener('click', ()=>{ startGame(); });
+    menuBtn.addEventListener('click', ()=>{ gameState='menu'; startOverlay.style.display=''; gameoverOverlay.style.display='none'; });
+
+    function togglePause(){
+      if(gameState==='playing'){ gameState='paused'; showToast('Paused'); }
+      else if(gameState==='paused'){ gameState='playing'; hideToast(); lastTime = performance.now(); }
+    }
+
+    function showToast(msg){ toast.textContent = msg; toast.style.display='block'; }
+    function hideToast(){ toast.style.display='none'; }
+
+    // Resize
+    window.addEventListener('resize', ()=>{
+      camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Utility: sphere vs axis-aligned box
+    function sphereIntersectsBox(center, radius, boxMin, boxMax){
+      const x = Math.max(boxMin.x, Math.min(center.x, boxMax.x));
+      const y = Math.max(boxMin.y, Math.min(center.y, boxMax.y));
+      const z = Math.max(boxMin.z, Math.min(center.z, boxMax.z));
+      const dx = x - center.x, dy = y - center.y, dz = z - center.z;
+      return (dx*dx + dy*dy + dz*dz) <= (radius*radius);
+    }
+
+    // Main loop
+    const clock = new THREE.Clock();
+    let lastTime = performance.now();
+    function tick(){
+      requestAnimationFrame(tick);
+      const now = performance.now();
+      let dt = (now - lastTime) / 1000; lastTime = now;
+      dt = Math.min(dt, 1/30); // clamp for big stalls
+
+      if(gameState === 'playing'){
+        // Input
+        const left = keys.get('KeyA') || keys.get('ArrowLeft') || touchLeft;
+        const right = keys.get('KeyD') || keys.get('ArrowRight') || touchRight;
+        const input = (right?1:0) - (left?1:0);
+        vX += input * accel * dt;
+        // Damping
+        if(Math.abs(input) < 0.1){ const sign = Math.sign(vX); vX -= sign * Math.min(Math.abs(vX), damping * dt); }
+        let x = player.position.x + vX * dt;
+        const limit = trackHalf; if(x < -limit) { x = -limit; vX = 0; } if(x > limit){ x = limit; vX = 0; }
+        player.position.x = x; halo.position.x = x;
+
+        // Spawn logic
+        spawnTimer += dt;
+        if(spawnTimer >= spawnEvery){ spawnTimer = 0; spawnObstacle(speed + THREE.MathUtils.randFloatSpread(2)); }
+
+        // Progress difficulty
+        speed = Math.min(maxSpeed, speed + 0.35 * dt);
+        spawnEvery = Math.max(minSpawnEvery, spawnEvery - 0.04 * dt);
+
+        // Move obstacles & test collision
+        for(let i=alive.length-1; i>=0; i--){
+          const m = alive[i];
+          m.position.z += m.userData.speed * dt;
+          // Collision test (AABB vs sphere)
+          const half = m.userData.size.clone().multiplyScalar(0.5);
+          const min = new THREE.Vector3().copy(m.position).sub(half);
+          const max = new THREE.Vector3().copy(m.position).add(half);
+          if(sphereIntersectsBox(player.position, playerRadius*0.95, min, max)){
+            gameOver(); break;
+          }
+          if(m.position.z > 10){
+            alive.splice(i,1); recycle(m);
+          }
+        }
+
+        // Score
+        score += (speed * dt) * 2; // faster = more points
+        scoreEl.textContent = score.toFixed(0);
+        bestEl.textContent = Math.max(best, score).toFixed(0);
+
+        // Camera subtle follow
+        camera.position.x = THREE.MathUtils.lerp(camera.position.x, player.position.x * .2, 0.08);
+        camera.lookAt(player.position.x, 1.0, 0);
+
+        // Neon lane shimmer
+        lanes.children.forEach((line, idx)=>{ line.material.opacity = 0.35 + 0.15*Math.sin(now*0.002 + idx); });
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    tick();
+
+    // Accessibility: space/enter to start when in menu
+    window.addEventListener('keydown', (e)=>{
+      if(gameState==='menu' && (e.code==='Space' || e.code==='Enter')){ startGame(); }
+    });
+
+    // Prevent iOS double-tap zoom on buttons
+    document.querySelectorAll('button,.touchBtn').forEach(el=>{
+      el.addEventListener('touchstart', ()=>{}, {passive:true});
+    });
+  </script>
+</body>
+</html>

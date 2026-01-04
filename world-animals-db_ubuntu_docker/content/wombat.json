@@ -1,0 +1,16 @@
+{
+  "id": "wombat",
+  "groupNumber": 5,
+  "region": "Australia",
+  "continents": ["OC"],
+  "name": { 
+    "en": "Wombat", 
+    "nl": "Wombat" 
+  },
+  "fact": { 
+    "en": "Wombats have cube-shaped poop and dig extensive burrow systems.", 
+    "nl": "Wombats hebben kubusvormige uitwerpselen en graven uitgebreide gangenstelsels." 
+  },
+  "photo": "https://upload.wikimedia.org/wikipedia/commons/0/02/Common_wombat_standing_near_burrow_-_DPLA_-_01e55b567eb4c9241d31b1c88506ccf7.jpg",
+  "mini":  "https://upload.wikimedia.org/wikipedia/commons/0/02/Common_wombat_standing_near_burrow_-_DPLA_-_01e55b567eb4c9241d31b1c88506ccf7.jpg"
+}
