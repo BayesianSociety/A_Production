@@ -16,6 +16,7 @@ COPY src ./src
 COPY public ./public
 COPY scripts ./scripts
 COPY content ./content
+COPY .env .
 
 # Generate Prisma client for the container OS
 RUN npx prisma generate
